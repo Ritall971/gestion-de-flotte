@@ -211,6 +211,19 @@ a.btn { text-decoration: none; }
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; z-index: 50; max-width: calc(100vw - 32px); }
 .foot { font-size: 13px; color: var(--muted); }
 @media (prefers-reduced-motion: no-preference) { .btn, .stat { transition: border-color .15s, box-shadow .15s, filter .15s; } }
+/* Rôles */
+body.role-user .admin-only { display: none !important; }
+.who-me { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.role-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--fg); }
+.role-tag.admin { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.users { list-style: none; margin: 0; padding: 0; }
+.users li { display: grid; grid-template-columns: minmax(0, 1fr) 180px 150px; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.users li:last-child { border-bottom: 0; }
+.users .mail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.users input, .users select { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--surface-2); width: 100%; }
+@media (max-width: 640px) { .users li { grid-template-columns: 1fr 1fr; } .users .mail { grid-column: 1 / -1; } }
+.rights { padding: 12px 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
+
 /* Connexion */
 .login { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-left, 0px)); }
 .login form { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; display: grid; gap: 14px; box-shadow: var(--shadow); }
@@ -237,15 +250,16 @@ a.btn { text-decoration: none; }
     <div>
       <h1>Gestion de flotte</h1>
       <div class="sub" id="sub">Chargement des véhicules…</div>
+      <div class="who-me" id="whoMe" hidden></div>
     </div>
     <div class="actions">
       <button class="btn" id="btnInstall" type="button" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M12 8v7m0 0-3-3m3 3 3-3"/></svg>Installer l'appli</button>
-      <button class="btn" id="btnImport" type="button" title="Importer une liste depuis Excel ou CSV">
+      <button class="admin-only btn" id="btnImport" type="button" title="Importer une liste depuis Excel ou CSV">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0-4 4m4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Importer</button>
-      <button class="btn" id="btnExport" type="button">
+      <button class="admin-only btn" id="btnExport" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Exporter Excel</button>
-      <button class="btn primary" id="btnAdd" type="button">
+      <button class="admin-only btn primary" id="btnAdd" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Ajouter un véhicule</button>
       <input type="file" id="fileImport" accept=".xlsx,.xls,.csv" hidden>
     </div>
@@ -263,6 +277,7 @@ a.btn { text-decoration: none; }
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tabV" aria-selected="true" type="button">Véhicules</button>
     <button class="tab" role="tab" id="tabH" aria-selected="false" type="button">Historique</button>
+    <button class="tab" role="tab" id="tabU" aria-selected="false" type="button" hidden>Utilisateurs</button>
   </div>
 
   <section class="panel" id="panelV">
@@ -286,8 +301,9 @@ a.btn { text-decoration: none; }
     </div>
     <div class="empty" id="empty" hidden>
       <h2>Aucun véhicule enregistré</h2>
-      <p>Ajoutez vos véhicules avec leur plaque, leur marque et leur modèle, ou importez la liste depuis un fichier Excel (colonnes Plaque, Marque, Modèle).</p>
-      <div class="actions"><button class="btn primary" type="button" data-act="add">Ajouter un véhicule</button><button class="btn" type="button" data-act="import">Importer un fichier Excel</button><button class="btn" type="button" data-act="demo">Charger des exemples</button></div>
+      <p class="admin-only">Ajoutez vos véhicules avec leur plaque, leur marque et leur modèle, ou importez la liste depuis un fichier Excel (colonnes Plaque, Marque, Modèle).</p>
+      <div class="actions admin-only"><button class="btn primary" type="button" data-act="add">Ajouter un véhicule</button><button class="btn" type="button" data-act="import">Importer un fichier Excel</button><button class="btn" type="button" data-act="demo">Charger des exemples</button></div>
+      <p id="emptyUser" hidden>Un administrateur doit d'abord ajouter les véhicules.</p>
     </div>
     <div class="empty" id="noMatch" hidden><p>Aucun véhicule ne correspond à ce filtre.</p></div>
   </section>
@@ -295,6 +311,15 @@ a.btn { text-decoration: none; }
   <section class="panel" id="panelH" hidden>
     <ul class="log" id="log"></ul>
     <div class="empty" id="logEmpty" hidden><p>Les sorties, retours et passages en maintenance apparaîtront ici.</p></div>
+  </section>
+
+  <section class="panel" id="panelU" hidden>
+    <ul class="users" id="users"></ul>
+    <div class="rights">
+      <span><strong>Admin</strong> : tout faire (véhicules, maintenance, CT, documents, import et export Excel, utilisateurs).</span>
+      <span><strong>Utilisateur</strong> : voir la flotte, l'historique et les documents, sortir et rendre un véhicule.</span>
+      <span>Pour ajouter une personne : Supabase &gt; Authentication &gt; Users &gt; Add user. Elle apparaît ici avec le rôle Utilisateur.</span>
+    </div>
   </section>
 
   <p class="hint" id="iosHint" hidden>Pour installer l'appli sur iPhone : appuyez sur le bouton Partager de Safari, puis sur « Sur l'écran d'accueil ».</p>
@@ -463,13 +488,20 @@ a.btn { text-decoration: none; }
     window.addEventListener("online", pullAll);
     return {
       kind: "supabase", canUpload: true, start: pullAll,
+      async loadMe() {
+        const { data: u } = await sb.auth.getUser();
+        const { data } = await sb.from("profils").select("role,nom,email").eq("user_id", u.user.id).maybeSingle();
+        return { id: u.user.id, email: u.user.email, nom: (data && data.nom) || "", role: (data && data.role) || "user" };
+      },
+      async listProfils() { const { data, error } = await sb.from("profils").select("user_id,email,nom,role").order("email"); if (error) fail(error); return data; },
+      async updateProfil(id, patch) { const { error } = await sb.from("profils").update(patch).eq("user_id", id); if (error) fail(error); },
       onVehicles(f) { subs.v.push(f); f(cache.v.slice()); },
       onHistory(f) { subs.h.push(f); f(cache.h.slice()); },
       onDocs(f) { subs.d.push(f); f(cache.d.slice()); },
       async add(v) { const id = uid(); const { error } = await sb.from("vehicules").insert({ id, data: v }); if (error) fail(error); await pull("v"); return id; },
       async update(id, patch) { const { error } = await sb.rpc("merge_vehicule", { p_id: id, p_patch: patch }); if (error) fail(error); await pull("v"); },
       async remove(id) { const { error } = await sb.from("vehicules").delete().eq("id", id); if (error) fail(error); await pull("v"); },
-      async log(h) { const { error } = await sb.from("historique").insert({ id: uid(), date: h.date, data: h }); if (error) fail(error); await pull("h"); },
+      async log(h) { h = { ...h, auteur: me.nom || me.email || "" }; const { error } = await sb.from("historique").insert({ id: uid(), date: h.date, data: h }); if (error) fail(error); await pull("h"); },
       async upload(file) {
         if (file.size > 20 * 1024 * 1024) throw new Error("Ce fichier dépasse 20 Mo.");
         const safe = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
@@ -487,6 +519,40 @@ a.btn { text-decoration: none; }
       async openUrl(d) { const { data, error } = await sb.storage.from("documents").createSignedUrl(d.path, 600); if (error) fail(error); return data.signedUrl; },
     };
   }
+
+  let me = { role: "admin", nom: "", email: "" }; // sans synchronisation : un seul utilisateur, avec tous les droits
+  const isAdmin = () => me.role === "admin";
+  function applyRole() {
+    document.body.classList.toggle("role-user", !isAdmin());
+    store.canUpload = store.canUpload && isAdmin();
+    $("#tabU").hidden = !(isAdmin() && store.listProfils);
+    $("#emptyUser").hidden = isAdmin();
+    if (me.email) {
+      $("#whoMe").hidden = false;
+      $("#whoMe").innerHTML = `${esc(me.nom || me.email)} <span class="role-tag ${isAdmin() ? "admin" : ""}">${isAdmin() ? "Admin" : "Utilisateur"}</span>`;
+    }
+  }
+  async function renderUsers() {
+    if (!store.listProfils) return;
+    try {
+      const list = await store.listProfils();
+      $("#users").innerHTML = list.map((u) => `<li data-uid="${esc(u.user_id)}">
+        <span class="mail" title="${esc(u.email)}">${esc(u.email)}${u.user_id === me.id ? ' <span class="muted">(vous)</span>' : ""}</span>
+        <input type="text" value="${esc(u.nom || "")}" placeholder="Nom affiché" aria-label="Nom de ${esc(u.email)}" data-f="nom">
+        <select data-f="role" aria-label="Rôle de ${esc(u.email)}" ${u.user_id === me.id ? "disabled" : ""}>
+          <option value="user" ${u.role === "user" ? "selected" : ""}>Utilisateur</option>
+          <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+        </select></li>`).join("");
+    } catch (e) { showToast("Liste des utilisateurs indisponible : " + e.message); }
+  }
+  $("#users").addEventListener("change", async (e) => {
+    const f = e.target.dataset.f, li = e.target.closest("li"); if (!f || !li) return;
+    try {
+      await store.updateProfil(li.dataset.uid, { [f]: e.target.value.trim() });
+      showToast(f === "role" ? "Rôle modifié" : "Nom modifié");
+      if (li.dataset.uid === me.id && f === "nom") { me.nom = e.target.value.trim(); applyRole(); }
+    } catch (err) { showToast("Modification refusée : " + err.message); renderUsers(); }
+  });
 
   async function init() {
     const cfg = window.FLOTTE_CONFIG || {};
@@ -511,8 +577,10 @@ a.btn { text-decoration: none; }
       start(localStore());
     }
   }
-  function start(st) {
+  async function start(st) {
     store = st;
+    if (store.loadMe) { try { me = await store.loadMe(); } catch (e) { me = { role: "user" }; } }
+    applyRole();
     store.onVehicles((list) => { vehicles = list; render(); if (dossierId && $("#dlgDocs").open) renderDossier(); });
     store.onDocs((list) => { docs = list.sort((a, b) => (b.date || b.ajouteLe || "").localeCompare(a.date || a.ajouteLe || "")); render(); if (dossierId && $("#dlgDocs").open) renderDossier(); });
     store.onHistory((list) => { history = list.sort((a, b) => (b.date || "").localeCompare(a.date || "")); renderLog(); });
@@ -596,12 +664,12 @@ a.btn { text-decoration: none; }
     $("#count").textContent = vehicles.length ? `${list.length} affiché${list.length > 1 ? "s" : ""}` : "";
     $("#rows").innerHTML = list.map((v) => {
       let btns = "";
-      if (v.statut === "attente") btns = `<button class="btn sm primary" data-act="sortie" data-id="${v.id}" type="button">Sortir</button><button class="btn sm" data-act="maintenance" data-id="${v.id}" type="button">Maintenance</button>`;
+      if (v.statut === "attente") btns = `<button class="btn sm primary" data-act="sortie" data-id="${v.id}" type="button">Sortir</button><button class="btn sm admin-only" data-act="maintenance" data-id="${v.id}" type="button">Maintenance</button>`;
       else if (v.statut === "sortie") btns = `<button class="btn sm primary" data-act="retour" data-id="${v.id}" type="button">Retour</button>`;
-      else btns = `<button class="btn sm primary" data-act="fin_maintenance" data-id="${v.id}" type="button">Remettre en service</button>`;
+      else btns = `<button class="btn sm primary admin-only" data-act="fin_maintenance" data-id="${v.id}" type="button">Remettre en service</button>`;
       const nd = docs.filter((d) => d.vehiculeId === v.id).length;
       btns += `<button class="btn sm" data-act="docs" data-id="${v.id}" type="button">Documents${nd ? ` (${nd})` : ""}</button>`;
-      btns += `<button class="btn sm" data-act="edit" data-id="${v.id}" type="button" aria-label="Modifier ${esc(v.plaque)}">Modifier</button>`;
+      btns += `<button class="btn sm admin-only" data-act="edit" data-id="${v.id}" type="button" aria-label="Modifier ${esc(v.plaque)}">Modifier</button>`;
       const details = [v.annee, kmFmt(v.km)].filter(Boolean).join(" · ");
       let who = '<span class="muted">—</span>';
       if (v.statut === "sortie") who = `<strong>${esc(v.conducteur || "Non renseigné")}</strong><span class="since" title="${esc(fmtDate(v.depuis))}">${since(v.depuis)}${v.motif ? " · " + esc(v.motif) : ""}</span>`;
@@ -621,7 +689,7 @@ a.btn { text-decoration: none; }
     $("#log").innerHTML = history.slice(0, 300).map((h) => `<li>
       <time datetime="${esc(h.date)}">${esc(fmtDate(h.date))}</time>
       ${plateHTML(h.plaque)}
-      <div class="what"><strong>${esc(ACTION[h.action] || h.action)}</strong> · ${esc(h.vehicule || "")}${h.conducteur ? " · par <strong>" + esc(h.conducteur) + "</strong>" : ""}${h.note ? ' <span class="muted">· ' + esc(h.note) + "</span>" : ""}</div>
+      <div class="what"><strong>${esc(ACTION[h.action] || h.action)}</strong> · ${esc(h.vehicule || "")}${h.conducteur ? " · par <strong>" + esc(h.conducteur) + "</strong>" : ""}${h.note ? ' <span class="muted">· ' + esc(h.note) + "</span>" : ""}${h.auteur ? ' <span class="muted">· saisi par ' + esc(h.auteur) + "</span>" : ""}</div>
     </li>`).join("");
     render();
   }
@@ -638,9 +706,11 @@ a.btn { text-decoration: none; }
     const k = b.dataset.sort; sortDir = sortKey === k ? -sortDir : 1; sortKey = k; render();
   }));
   function showTab(t) {
-    $("#tabV").setAttribute("aria-selected", t === "v"); $("#tabH").setAttribute("aria-selected", t === "h");
-    $("#panelV").hidden = t !== "v"; $("#panelH").hidden = t !== "h";
+    $("#tabV").setAttribute("aria-selected", t === "v"); $("#tabH").setAttribute("aria-selected", t === "h"); $("#tabU").setAttribute("aria-selected", t === "u");
+    $("#panelV").hidden = t !== "v"; $("#panelH").hidden = t !== "h"; $("#panelU").hidden = t !== "u";
+    if (t === "u") renderUsers();
   }
+  $("#tabU").onclick = () => showTab("u");
   $("#tabV").onclick = () => showTab("v");
   $("#tabH").onclick = () => showTab("h");
   if (location.hash === "#historique") showTab("h");
@@ -705,7 +775,7 @@ a.btn { text-decoration: none; }
     $("#mNote").placeholder = isOut ? "Intervention client, rendez-vous…" : "Vidange, pneus, contrôle technique…";
     $("#mKmField").hidden = false;
     $("#mOk").textContent = isOut ? "Valider la sortie" : "Mettre en maintenance";
-    $("#mCond").value = ""; $("#mNote").value = ""; $("#mKm").value = ""; $("#mErr").textContent = "";
+    $("#mCond").value = me.role === "user" ? me.nom || me.email || "" : ""; $("#mNote").value = ""; $("#mKm").value = ""; $("#mErr").textContent = "";
     $("#dlgMove").showModal(); (isOut ? $("#mCond") : $("#mNote")).focus();
   }
   $("#fMove").addEventListener("submit", async (e) => {

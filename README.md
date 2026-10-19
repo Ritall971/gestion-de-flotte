@@ -35,6 +35,22 @@ Connectez-vous ensuite avec l'e-mail et le mot de passe créés à l'étape 1.3.
 Dans l'ancienne page, cliquez sur **Exporter Excel**, puis importez ce fichier dans la nouvelle appli avec le bouton **Importer**.
 Les véhicules et les dates de CT sont repris. Les documents sont à rajouter, et l'historique repart de zéro.
 
+## Rôles et droits
+
+| Action | Admin | Utilisateur |
+|---|---|---|
+| Voir la flotte, l'historique et les documents | Oui | Oui |
+| Sortir et rendre un véhicule | Oui | Oui |
+| Ajouter, modifier ou supprimer un véhicule | Oui | Non |
+| Gérer la maintenance et les dates de CT | Oui | Non |
+| Ajouter ou supprimer des documents | Oui | Non |
+| Importer et exporter vers Excel | Oui | Non |
+| Changer le rôle des utilisateurs | Oui | Non |
+
+Les droits sont vérifiés par la base de données elle-même, pas seulement par l'affichage.
+Chaque compte créé dans **Authentication > Users** reçoit le rôle Utilisateur. Un admin le passe en Admin depuis l'onglet **Utilisateurs** de l'appli.
+Le premier compte créé dans le projet devient automatiquement Admin.
+
 ## Bon à savoir
 
 - Si `config.js` reste vide, l'appli fonctionne quand même, mais les données restent sur l'appareil.
