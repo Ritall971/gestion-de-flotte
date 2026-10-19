@@ -1,6 +1,6 @@
 // Garde l'appli disponible hors connexion : les fichiers de l'appli sont mis en cache,
 // les données (Supabase) passent toujours par le réseau.
-const CACHE = "flotte-v7";
+const CACHE = "flotte-v8";
 const SHELL = ["./", "index.html", "config.js", "manifest.webmanifest", "vendor/xlsx.full.min.js", "vendor/supabase.js",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon.png"];
 
@@ -16,4 +16,20 @@ self.addEventListener("fetch", (e) => {
     if (r.ok) { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
     return r;
   }).catch(() => caches.match(e.request).then((r) => r || caches.match("index.html"))));
+});
+
+// Notifications envoyées par la fonction Supabase "alertes".
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { d = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Gestion de flotte", {
+    body: d.body || "", tag: d.tag, renotify: !!d.tag, icon: "icons/icon-192.png", badge: "icons/favicon.png", data: { url: d.url || "./" },
+  }));
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) if ("focus" in c) return c.focus();
+    return self.clients.openWindow(e.notification.data && e.notification.data.url || "./");
+  }));
 });

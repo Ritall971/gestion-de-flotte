@@ -232,6 +232,10 @@ body.role-user .admin-only { display: none !important; }
 .users .mail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .users input, .users select { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--surface-2); width: 100%; }
 @media (max-width: 640px) { .users li { grid-template-columns: 1fr 1fr; } .users .mail { grid-column: 1 / -1; } }
+.notif { padding: 14px; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.notif h3 { margin: 0; font-family: var(--f-display); font-size: 17px; }
+.notif p { margin: 0; font-size: 14px; color: var(--muted); }
+.notif .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .rights { padding: 12px 14px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 
 /* Connexion */
@@ -325,6 +329,16 @@ body.role-user .admin-only { display: none !important; }
 
   <section class="panel" id="panelU" hidden>
     <ul class="users" id="users"></ul>
+    <div class="notif" id="notifBox" hidden>
+      <h3>Notifications sur ce téléphone</h3>
+      <p id="notifState">Vérification…</p>
+      <div class="actions">
+        <button class="btn primary" type="button" id="notifOn" hidden>Activer les notifications</button>
+        <button class="btn" type="button" id="notifTest" hidden>Envoyer un test</button>
+        <button class="btn" type="button" id="notifCheck" hidden>Vérifier les échéances maintenant</button>
+        <button class="btn" type="button" id="notifOff" hidden>Désactiver</button>
+      </div>
+    </div>
     <div class="rights">
       <span><strong>Admin</strong> : tout faire (historique et kilométrages, véhicules, maintenance, CT, documents, import et export Excel, utilisateurs).</span>
       <span><strong>Utilisateur</strong> : voir la flotte et les documents, sortir et rendre un véhicule, envoyer des documents (et supprimer les siens).</span>
@@ -549,6 +563,24 @@ body.role-user .admin-only { display: none !important; }
         await sb.storage.from("documents").remove([d.path]); await pull("d");
       },
       url(d) { return d._url || ""; },
+      push: {
+        async call(action) {
+          const { data, error } = await sb.functions.invoke("alertes", { body: { action } });
+          if (!error) return data;
+          let msg = "";
+          const res = error.context;
+          if (res && res.status === 404) msg = "la fonction « alertes » n'est pas encore installée dans Supabase (voir le guide)";
+          else if (res && typeof res.json === "function") { try { const b = await res.json(); msg = b.error || b.message || ""; } catch (e) {} }
+          else if (navigator.onLine === false) msg = "pas de connexion internet";
+          else msg = "la fonction « alertes » est injoignable (est-elle installée dans Supabase ?)";
+          throw new Error(msg || error.message);
+        },
+        async save(j) {
+          const { error } = await sb.from("push_abonnements").upsert({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_id: me.id });
+          if (error) fail(error);
+        },
+        async remove(endpoint) { await sb.from("push_abonnements").delete().eq("endpoint", endpoint); },
+      },
       async openUrl(d) { const { data, error } = await sb.storage.from("documents").createSignedUrl(d.path, 600); if (error) fail(error); return data.signedUrl; },
     };
   }
@@ -585,6 +617,65 @@ body.role-user .admin-only { display: none !important; }
       if (li.dataset.uid === me.id && f === "nom") { me.nom = e.target.value.trim(); applyRole(); }
     } catch (err) { showToast("Modification refusée : " + err.message); renderUsers(); }
   });
+
+  /* ---------- Notifications (admins) ---------- */
+  const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const b64uBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+  async function pushReg() { return navigator.serviceWorker.getRegistration().catch(() => null); }
+  async function renderNotif() {
+    const box = $("#notifBox"); box.hidden = !store.push; if (!store.push) return;
+    const st = $("#notifState"), btn = (id, show) => { $(id).hidden = !show; };
+    btn("#notifOn", false); btn("#notifOff", false); btn("#notifTest", false); btn("#notifCheck", false);
+    if (!pushSupported()) {
+      st.textContent = /iphone|ipad|ipod/i.test(navigator.userAgent)
+        ? "Sur iPhone, installez d'abord l'appli sur l'écran d'accueil (Partager > Sur l'écran d'accueil), puis ouvrez-la depuis son icône pour activer les notifications."
+        : "Ce navigateur ne gère pas les notifications. Utilisez l'appli installée sur le téléphone (Chrome sur Android).";
+      return;
+    }
+    const reg = await pushReg(), sub = reg ? await reg.pushManager.getSubscription().catch(() => null) : null;
+    if (Notification.permission === "denied") {
+      st.textContent = "Les notifications sont bloquées pour cette appli. Autorisez-les dans les réglages du téléphone (Notifications), puis revenez ici.";
+    } else if (sub) {
+      st.textContent = "Activées. Chaque matin, vous êtes prévenu d'un contrôle technique ou d'une fin de location à 30 jours, à 7 jours et une fois dépassé, et d'un véhicule sorti depuis plus de 3 jours.";
+      btn("#notifOff", true); btn("#notifTest", true); btn("#notifCheck", true);
+    } else {
+      st.textContent = "Désactivées sur cet appareil. Activez-les pour être prévenu des contrôles techniques, des fins de location et des véhicules non rendus.";
+      btn("#notifOn", true);
+    }
+  }
+  $("#notifOn").onclick = async () => {
+    const b = $("#notifOn"); b.disabled = true;
+    try {
+      if ((await Notification.requestPermission()) !== "granted") throw new Error("autorisation refusée");
+      const { publicKey } = await store.push.call("cle");
+      const reg = await pushReg(); if (!reg) throw new Error("rechargez la page puis réessayez");
+      const old = await reg.pushManager.getSubscription(); if (old) await old.unsubscribe();
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(publicKey) });
+      await store.push.save(sub.toJSON());
+      showToast("Notifications activées sur ce téléphone");
+    } catch (e) { showToast("Activation impossible : " + e.message); }
+    b.disabled = false; renderNotif();
+  };
+  $("#notifOff").onclick = async () => {
+    try {
+      const reg = await pushReg(), sub = reg && (await reg.pushManager.getSubscription());
+      if (sub) { await store.push.remove(sub.endpoint); await sub.unsubscribe(); }
+      showToast("Notifications désactivées sur ce téléphone");
+    } catch (e) { showToast("Erreur : " + e.message); }
+    renderNotif();
+  };
+  $("#notifTest").onclick = async () => {
+    try {
+      const r = await store.push.call("test");
+      showToast(r.envoyes ? "Notification de test envoyée" : "Aucun appareil n'a reçu le test : désactivez puis réactivez les notifications.");
+    } catch (e) { showToast("Test impossible : " + e.message); }
+  };
+  $("#notifCheck").onclick = async () => {
+    try {
+      const r = await store.push.call("verifier");
+      showToast(r.alertes ? `${r.alertes} alerte${r.alertes > 1 ? "s" : ""} envoyée${r.alertes > 1 ? "s" : ""}` : "Rien de nouveau à signaler");
+    } catch (e) { showToast("Vérification impossible : " + e.message); }
+  };
 
   async function init() {
     const cfg = window.FLOTTE_CONFIG || {};
@@ -755,7 +846,7 @@ body.role-user .admin-only { display: none !important; }
   function showTab(t) {
     $("#tabV").setAttribute("aria-selected", t === "v"); $("#tabH").setAttribute("aria-selected", t === "h"); $("#tabU").setAttribute("aria-selected", t === "u");
     $("#panelV").hidden = t !== "v"; $("#panelH").hidden = t !== "h"; $("#panelU").hidden = t !== "u";
-    if (t === "u") renderUsers();
+    if (t === "u") { renderUsers(); renderNotif(); }
   }
   $("#tabU").onclick = () => showTab("u");
   $("#tabV").onclick = () => showTab("v");

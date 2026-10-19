@@ -54,6 +54,27 @@ Les droits sont vérifiés par la base de données elle-même, pas seulement par
 Chaque compte créé dans **Authentication > Users** reçoit le rôle Utilisateur. Un admin le passe en Admin depuis l'onglet **Utilisateurs** de l'appli.
 Le premier compte créé dans le projet devient automatiquement Admin.
 
+## Notifications sur le téléphone des admins
+
+Chaque matin vers 7 h ou 8 h, les admins reçoivent une notification s'il y a :
+- un contrôle technique dans 30 jours, dans 7 jours, ou dépassé ;
+- une fin de location dans 30 jours, dans 7 jours, ou passée ;
+- un véhicule sorti depuis plus de 3 jours et pas encore rendu.
+
+Chaque alerte n'est envoyée qu'une fois. C'est gratuit, et il n'y a aucun compte ni aucune clé à créer.
+
+Mise en place (une seule fois) :
+1. **Base** : dans Supabase > SQL Editor, relancez `supabase.sql` en entier.
+2. **Fonction d'envoi** : dans Supabase > Edge Functions, cliquez sur **Deploy a new function** puis **Via Editor**.
+   - Nommez la fonction `alertes`.
+   - Effacez le code d'exemple et collez tout le contenu de [`supabase/functions/alertes/index.ts`](supabase/functions/alertes/index.ts) (bouton « Copy raw file » sur GitHub).
+   - Cliquez sur **Deploy function**. Laissez l'option « Verify JWT » activée.
+3. **Téléphone** : ouvrez l'appli installée avec un compte admin, puis allez dans l'onglet **Utilisateurs** > **Activer les notifications** et acceptez. Touchez ensuite **Envoyer un test** pour vérifier.
+   - Sur iPhone, il faut iOS 16.4 ou plus récent, et l'appli doit être ouverte depuis son icône sur l'écran d'accueil.
+   - À faire sur chaque téléphone qui doit recevoir les alertes.
+
+Le bouton **Vérifier les échéances maintenant** lance la vérification sans attendre le lendemain matin.
+
 ## Bon à savoir
 
 - Si `config.js` reste vide, l'appli fonctionne quand même, mais les données restent sur l'appareil.

@@ -157,3 +157,42 @@ begin
   begin alter publication supabase_realtime add table public.historique; exception when duplicate_object then null; end;
   begin alter publication supabase_realtime add table public.documents; exception when duplicate_object then null; end;
 end $$;
+
+-- ============ Notifications sur le téléphone des admins ============
+-- Chaque appareil où un admin a activé les notifications.
+create table if not exists public.push_abonnements (
+  endpoint text primary key,
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.push_abonnements enable row level security;
+drop policy if exists "ses appareils" on public.push_abonnements;
+create policy "ses appareils" on public.push_abonnements for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Réglages internes et alertes déjà envoyées : lisibles uniquement par la fonction "alertes".
+create table if not exists public.notif_prive (cle text primary key, valeur text not null);
+create table if not exists public.notif_envoyees (cle text primary key, date timestamptz not null default now());
+alter table public.notif_prive enable row level security;
+alter table public.notif_envoyees enable row level security;
+revoke all on public.notif_prive, public.notif_envoyees from anon, authenticated;
+insert into public.notif_prive (cle, valeur)
+  values ('cron_secret', replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', ''))
+  on conflict (cle) do nothing;
+
+-- Vérification chaque matin (6 h UTC, soit 7 h ou 8 h en France) : CT, fins de location, véhicules non rendus.
+create extension if not exists pg_net;
+create extension if not exists pg_cron;
+select cron.schedule('flotte-alertes', '0 6 * * *', $cron$
+  select net.http_post(
+    url := p.url,
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || p.anon, 'x-cron-secret', p.secret),
+    body := '{"action":"verifier"}'::jsonb)
+  from (select max(valeur) filter (where cle = 'url_fonction') as url,
+               max(valeur) filter (where cle = 'anon_key') as anon,
+               max(valeur) filter (where cle = 'cron_secret') as secret
+        from public.notif_prive) p
+  where p.url is not null;
+$cron$);
