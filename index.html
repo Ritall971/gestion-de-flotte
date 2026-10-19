@@ -349,6 +349,12 @@ body.role-user .admin-only { display: none !important; }
       <div class="field"><label for="vAnnee">Année</label><input id="vAnnee" inputmode="numeric" placeholder="2022"></div>
       <div class="field"><label for="vKm">Kilométrage</label><input id="vKm" inputmode="numeric" placeholder="45 000"></div>
     </div>
+    <div class="field"><label for="vAcq">Le véhicule est</label>
+      <select id="vAcq"><option value="achat">Acheté</option><option value="location">En location</option></select></div>
+    <div class="grid2" id="vLocFields" hidden>
+      <div class="field"><label for="vLocDebut">Début du contrat de location</label><input id="vLocDebut" type="date"></div>
+      <div class="field"><label for="vLocFin">Fin du contrat de location</label><input id="vLocFin" type="date"></div>
+    </div>
     <div class="grid2">
       <div class="field"><label for="vDernierCT">Dernier contrôle technique</label><input id="vDernierCT" type="date"></div>
       <div class="field"><label for="vProchainCT">Prochain contrôle technique</label><input id="vProchainCT" type="date"></div>
@@ -632,6 +638,11 @@ body.role-user .admin-only { display: none !important; }
   const isoDay = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const plusYears = (ymd, n) => { if (!ymd) return ""; const d = new Date(ymd + "T00:00:00"); d.setFullYear(d.getFullYear() + n); return isoDay(d); };
   const CT_SOON = 30; // jours avant échéance pour l'alerte
+  function locLabel(v) {
+    if (v.acquisition !== "location") return "";
+    if (!v.locFin) return "Location";
+    return (v.locFin < isoDay(new Date()) ? "Location terminée le " : "Location jusqu'au ") + dayFmt(v.locFin);
+  }
   function ctInfo(ymd) {
     if (!ymd) return { cls: "none", days: null, rel: "" };
     const days = Math.round((new Date(ymd + "T00:00:00") - today0()) / 86400000);
@@ -693,7 +704,7 @@ body.role-user .admin-only { display: none !important; }
       btns += `<button class="btn sm" data-act="docs" data-id="${v.id}" type="button">Documents${nd ? ` (${nd})` : ""}</button>`;
       btns += `<button class="btn sm admin-only" data-act="hist" data-id="${v.id}" type="button">Historique</button>`;
       btns += `<button class="btn sm admin-only" data-act="edit" data-id="${v.id}" type="button" aria-label="Modifier ${esc(v.plaque)}">Modifier</button>`;
-      const details = [v.annee, kmFmt(v.km)].filter(Boolean).join(" · ");
+      const details = [v.annee, kmFmt(v.km), locLabel(v)].filter(Boolean).join(" · ");
       let who = '<span class="muted">—</span>';
       if (v.statut === "sortie") who = `<strong>${esc(v.conducteur || "Non renseigné")}</strong><span class="since" title="${esc(fmtDate(v.depuis))}">${since(v.depuis)}${v.motif ? " · " + esc(v.motif) : ""}</span>`;
       else if (v.statut === "maintenance") who = `<span class="since" title="${esc(fmtDate(v.depuis))}">${v.motif ? esc(v.motif) + " · " : ""}${since(v.depuis)}</span>`;
@@ -749,11 +760,18 @@ body.role-user .admin-only { display: none !important; }
     $("#vAnnee").value = v ? v.annee || "" : ""; $("#vKm").value = v ? v.km || "" : "";
     $("#vDernierCT").value = v ? v.dernierCT || "" : ""; $("#vProchainCT").value = v ? v.prochainCT || "" : "";
     $("#vStatut").value = v ? v.statut : "attente"; $("#vCond").value = v ? v.conducteur || "" : ""; $("#vNote").value = v ? v.note || "" : "";
-    $("#vErr").textContent = ""; syncCond();
+    $("#vAcq").value = v && v.acquisition === "location" ? "location" : "achat";
+    $("#vLocDebut").value = v ? v.locDebut || "" : ""; $("#vLocFin").value = v ? v.locFin || "" : "";
+    $("#vErr").textContent = ""; syncCond(); syncAcq();
     $("#dlgVehicle").showModal(); $("#vPlaque").focus();
   }
   function syncCond() { $("#vCondField").hidden = $("#vStatut").value !== "sortie"; }
   $("#vStatut").addEventListener("change", syncCond);
+  function syncAcq() {
+    const loc = $("#vAcq").value === "location";
+    $("#vLocFields").hidden = !loc; $("#vLocDebut").required = loc; $("#vLocFin").required = loc;
+  }
+  $("#vAcq").addEventListener("change", syncAcq);
   $("#vDernierCT").addEventListener("change", () => { if (!$("#vProchainCT").value && $("#vDernierCT").value) $("#vProchainCT").value = plusYears($("#vDernierCT").value, 2); });
   $("#btnAdd").onclick = () => openVehicle(null);
 
@@ -764,11 +782,15 @@ body.role-user .admin-only { display: none !important; }
     if (!plaque || !marque || !modele) { $("#vErr").textContent = "La plaque, la marque et le modèle sont obligatoires."; return; }
     const dup = vehicles.find((v) => plateKey(v.plaque) === plateKey(plaque) && v.id !== editId);
     if (dup) { $("#vErr").textContent = `La plaque ${plaque} est déjà enregistrée (${dup.marque} ${dup.modele}).`; return; }
+    const acquisition = $("#vAcq").value;
+    const locDebut = acquisition === "location" ? $("#vLocDebut").value : "", locFin = acquisition === "location" ? $("#vLocFin").value : "";
+    if (acquisition === "location" && (!locDebut || !locFin)) { $("#vErr").textContent = "Pour un véhicule en location, les dates de début et de fin de contrat sont obligatoires."; return; }
+    if (locFin && locFin < locDebut) { $("#vErr").textContent = "La fin du contrat de location doit être après le début."; return; }
     const statut = $("#vStatut").value;
     const km = $("#vKm").value.replace(/\D/g, "");
     const rec = { plaque, marque, modele, annee: $("#vAnnee").value.trim(), km: km ? Number(km) : "", statut,
       conducteur: statut === "sortie" ? $("#vCond").value.trim() : "", note: $("#vNote").value.trim(),
-      dernierCT: $("#vDernierCT").value, prochainCT: $("#vProchainCT").value };
+      dernierCT: $("#vDernierCT").value, prochainCT: $("#vProchainCT").value, acquisition, locDebut, locFin };
     try {
       if (editId) {
         const old = vehicles.find((v) => v.id === editId);
@@ -1042,7 +1064,10 @@ body.role-user .admin-only { display: none !important; }
         const km = pick(r, ["kilometrage", "km"]).replace(/\D/g, "");
         await store.add({ plaque, marque, modele, annee: pick(r, ["annee"]), km: km ? Number(km) : "", statut,
           conducteur: statut === "sortie" ? pick(r, ["conducteur", "utilisateur", "utilisepar"]) : "", depuis: new Date().toISOString(), note: pick(r, ["note", "remarque"]), creeLe: new Date().toISOString(),
-          dernierCT: pickDate(r, ["dernierct"]), prochainCT: pickDate(r, ["prochainct"]) });
+          dernierCT: pickDate(r, ["dernierct"]), prochainCT: pickDate(r, ["prochainct"]),
+          ...(norm(pick(r, ["acquisition", "achatlocation", "proprietelocation"])).startsWith("loc")
+            ? { acquisition: "location", locDebut: pickDate(r, ["debutlocation", "debutcontrat"]), locFin: pickDate(r, ["finlocation", "fincontrat"]) }
+            : { acquisition: "achat", locDebut: "", locFin: "" }) });
         known.add(plateKey(plaque)); added++;
       }
       if (added) await store.log({ date: new Date().toISOString(), action: "ajout", plaque: "IMPORT", vehicule: `${added} véhicule${added > 1 ? "s" : ""} importé${added > 1 ? "s" : ""} depuis ${file.name}`, conducteur: "", note: "" });
@@ -1058,13 +1083,14 @@ body.role-user .admin-only { display: none !important; }
       "Plaque": v.plaque, "Marque": v.marque, "Modèle": v.modele, "Année": v.annee || "", "Kilométrage": v.km === "" ? "" : v.km,
       "Statut": LABEL[v.statut] || v.statut, "Utilisé par": v.statut === "sortie" ? v.conducteur || "" : "",
       "Depuis le": fmtDate(v.depuis), "Motif": v.statut !== "attente" ? v.motif || "" : "", "Dernier CT": dayFmt(v.dernierCT), "Prochain CT": dayFmt(v.prochainCT),
-      "Échéance CT": v.prochainCT ? ctInfo(v.prochainCT).rel : "", "Documents": docs.filter((d) => d.vehiculeId === v.id).length, "Note": v.note || "",
+      "Échéance CT": v.prochainCT ? ctInfo(v.prochainCT).rel : "",
+      "Acquisition": v.acquisition === "location" ? "Location" : "Achat", "Début location": dayFmt(v.locDebut), "Fin location": dayFmt(v.locFin), "Documents": docs.filter((d) => d.vehiculeId === v.id).length, "Note": v.note || "",
     }));
     const dRows = docs.map((d) => ({ "Plaque": d.plaque, "Type": d.type, "Date du document": dayFmt(d.date), "Fichier": d.nom, "Ajouté le": fmtDate(d.ajouteLe) }));
     const hRows = history.map((h) => ({ "Date": fmtDate(h.date), "Action": ACTION[h.action] || h.action, "Plaque": h.plaque, "Véhicule": h.vehicule || "", "Conducteur": h.conducteur || "", "Compteur (km)": h.km ?? "", "Km parcourus": h.distance ?? "", "Saisi par": h.auteur || "", "Note": h.note || "" }));
     const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Documents": "", "Note": "" }]);
-    ws1["!cols"] = [12, 14, 18, 7, 12, 15, 20, 17, 24, 12, 12, 16, 11, 30].map((w) => ({ wch: w }));
+    const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Acquisition": "", "Début location": "", "Fin location": "", "Documents": "", "Note": "" }]);
+    ws1["!cols"] = [12, 14, 18, 7, 12, 15, 20, 17, 24, 12, 12, 16, 11, 14, 14, 11, 30].map((w) => ({ wch: w }));
     ws1["!autofilter"] = { ref: ws1["!ref"] };
     XLSX.utils.book_append_sheet(wb, ws1, "Véhicules");
     const ws2 = XLSX.utils.json_to_sheet(hRows.length ? hRows : [{ "Date": "", "Action": "", "Plaque": "", "Véhicule": "", "Conducteur": "", "Compteur (km)": "", "Km parcourus": "", "Saisi par": "", "Note": "" }]);
