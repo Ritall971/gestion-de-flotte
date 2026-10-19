@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gestion de flotte</title>
+<meta name="theme-color" content="#1d4fc4">
+<meta name="description" content="Suivi des véhicules de la flotte : statuts, conducteurs, contrôles techniques, documents et export Excel.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Flotte">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="config.js"></script>
+<style>
+/* Layout : bandeau de synthèse (compteurs = filtres), puis registre des véhicules en tableau, onglet historique. */
+:root {
+  --bg: #eef1f4;          /* gris bitume clair */
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --line: #d5dbe2;
+  --fg: #18202a;
+  --muted: #5b6876;
+  --accent: #1d4fc4;      /* bleu panneau routier */
+  --accent-fg: #ffffff;
+  --ok: #19794a;   --ok-bg: #e2f3e9;
+  --out: #a45a00;  --out-bg: #fdf0dc;
+  --maint: #b42318; --maint-bg: #fde7e5;
+  --plate-bg: #ffffff; --plate-fg: #111; --plate-band: #1d3fae;
+  --shadow: 0 1px 2px rgba(20,30,45,.06), 0 4px 16px rgba(20,30,45,.06);
+  --f-display: "Barlow Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --f-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12171d; --surface: #1a2129; --surface-2: #202833; --line: #2f3a46;
+    --fg: #e6ebf0; --muted: #98a5b3; --accent: #6f9bff; --accent-fg: #0b1220;
+    --ok: #5fd295; --ok-bg: #173526; --out: #f2b25c; --out-bg: #3a2a12;
+    --maint: #ff8a80; --maint-bg: #3d1a18;
+    --plate-bg: #f4f4f2; --plate-fg: #111; --plate-band: #2a4fc9;
+    --shadow: 0 1px 2px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12171d; --surface: #1a2129; --surface-2: #202833; --line: #2f3a46;
+  --fg: #e6ebf0; --muted: #98a5b3; --accent: #6f9bff; --accent-fg: #0b1220;
+  --ok: #5fd295; --ok-bg: #173526; --out: #f2b25c; --out-bg: #3a2a12;
+  --maint: #ff8a80; --maint-bg: #3d1a18;
+  --plate-bg: #f4f4f2; --plate-fg: #111; --plate-band: #2a4fc9;
+  --shadow: 0 1px 2px rgba(0,0,0,.3);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; -webkit-tap-highlight-color: transparent; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-block: 20px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px; }
+h1, h2 { font-family: var(--f-display); font-weight: 700; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+h1 { font-size: 30px; line-height: 1.1; }
+h2 { font-size: 20px; }
+.muted { color: var(--muted); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+header.top .sub { font-size: 14px; color: var(--muted); margin-top: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { color: var(--maint); }
+.btn.sm { padding: 5px 10px; font-size: 13px; }
+.btn svg { width: 16px; height: 16px; }
+
+/* Compteurs */
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.stat { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 2px; position: relative; }
+.stat .n { font-family: var(--f-display); font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.stat[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.stat .dot { position: absolute; top: 14px; right: 14px; width: 10px; height: 10px; border-radius: 50%; }
+.stat.attente .n { color: var(--ok); } .stat.attente .dot { background: var(--ok); }
+.stat.sortie .n { color: var(--out); } .stat.sortie .dot { background: var(--out); }
+.stat.maintenance .n { color: var(--maint); } .stat.maintenance .dot { background: var(--maint); }
+@media (max-width: 640px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Onglets */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px; font-family: var(--f-display); font-size: 18px; font-weight: 600; color: var(--muted); margin-bottom: -1px; }
+.tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); min-width: 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.search { flex: 1 1 220px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; background: var(--surface-2); }
+.search input { border: 0; background: transparent; outline: none; width: 100%; min-width: 0; }
+.search svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+.count { font-size: 13px; color: var(--muted); }
+
+.table-scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; background: var(--surface-2); white-space: nowrap; }
+th button { background: none; border: 0; padding: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; }
+tbody tr:hover { background: var(--surface-2); }
+tbody tr:last-child td { border-bottom: 0; }
+td.model { font-weight: 600; }
+td.model small { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
+td.who { min-width: 140px; }
+td.who .since { display: block; font-size: 13px; color: var(--muted); }
+td.row-actions { text-align: right; white-space: nowrap; }
+td.row-actions .actions { justify-content: flex-end; flex-wrap: nowrap; }
+
+/* Plaque d'immatriculation française */
+.plate { display: inline-flex; align-items: stretch; border: 1.5px solid #222; border-radius: 4px; overflow: hidden; background: var(--plate-bg); color: var(--plate-fg); font-family: var(--f-display); font-weight: 700; font-size: 17px; letter-spacing: .06em; line-height: 1; white-space: nowrap; }
+.plate .eu { background: var(--plate-band); color: #fff; font-size: 10px; font-family: var(--f-body); font-weight: 600; letter-spacing: 0; padding: 3px 4px; display: grid; place-items: end center; min-width: 16px; }
+.plate .num { padding: 5px 8px 4px; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.attente { color: var(--ok); background: var(--ok-bg); }
+.pill.sortie { color: var(--out); background: var(--out-bg); }
+.pill.maintenance { color: var(--maint); background: var(--maint-bg); }
+
+.empty { padding: 40px 20px; text-align: center; display: grid; gap: 10px; justify-items: center; }
+.empty h2 { font-size: 22px; }
+.empty p { margin: 0; max-width: 46ch; color: var(--muted); }
+
+/* Historique */
+.log { list-style: none; margin: 0; padding: 0; }
+.log li { display: grid; grid-template-columns: 150px auto 1fr; gap: 12px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.log li:last-child { border-bottom: 0; }
+.log time { font-family: var(--f-mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.log .what { min-width: 0; }
+@media (max-width: 640px) { .log li { grid-template-columns: 1fr; gap: 4px; } }
+
+/* Mobile : le tableau devient des cartes */
+@media (max-width: 760px) {
+  table.vehicles thead { display: none; }
+  table.vehicles, table.vehicles tbody, table.vehicles tr, table.vehicles td { display: block; width: 100%; }
+  table.vehicles tr { padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; }
+  table.vehicles td { border: 0; padding: 0; }
+  table.vehicles td.st { justify-self: end; }
+  table.vehicles td.model, table.vehicles td.who, table.vehicles td.ctc, table.vehicles td.row-actions { grid-column: 1 / -1; }
+  td.row-actions { text-align: left; }
+  td.row-actions .actions { justify-content: flex-start; flex-wrap: wrap; }
+}
+
+/* Dialogues */
+dialog { border: 1px solid var(--line); border-radius: 12px; padding: 0; background: var(--surface); color: var(--fg); width: min(460px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+dialog::backdrop { background: rgba(10,15,25,.45); }
+dialog form { display: grid; gap: 14px; padding: 20px; }
+.field { display: grid; gap: 4px; }
+.field label { font-size: 13px; font-weight: 600; color: var(--muted); }
+.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--surface-2); width: 100%; }
+.field textarea { min-height: 70px; resize: vertical; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 420px) { .grid2 { grid-template-columns: 1fr; } }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.err { color: var(--maint); font-size: 13px; min-height: 1em; margin: 0; }
+
+/* Contrôle technique */
+.ct { display: inline-grid; gap: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ct .d { font-family: var(--f-mono); font-size: 13px; }
+.ct .r { font-size: 12px; font-weight: 600; }
+.ct.late .r { color: var(--maint); } .ct.soon .r { color: var(--out); } .ct.ok .r { color: var(--muted); font-weight: 500; }
+.ct.none { color: var(--muted); font-size: 13px; }
+.alert { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 8px; background: var(--out-bg); color: var(--fg); border: 1px solid var(--line); }
+.alert.late { background: var(--maint-bg); }
+.alert strong { color: var(--out); } .alert.late strong { color: var(--maint); }
+.alert .btn { margin-left: auto; }
+.docs-n { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); margin-left: 6px; font-weight: 500; }
+.docs-n svg { width: 13px; height: 13px; }
+
+/* Dossier véhicule */
+dialog.wide { width: min(620px, calc(100vw - 32px)); }
+.dossier-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ct-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.ct-box .k { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+.ct-box .v { font-family: var(--f-display); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.doclist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 260px; overflow-y: auto; }
+.doclist li { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.doclist li:last-child { border-bottom: 0; }
+.doclist .thumb { width: 44px; height: 44px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; overflow: hidden; font-size: 11px; font-weight: 700; color: var(--maint); }
+.doclist .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.doclist .meta { min-width: 0; }
+.doclist .meta strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doclist .meta span { font-size: 13px; color: var(--muted); }
+.doclist .ops { display: flex; gap: 6px; }
+@media (max-width: 480px) { .doclist li { grid-template-columns: 44px 1fr; } .doclist .ops { grid-column: 2; } }
+.doclist .empty-li { display: block; padding: 16px; text-align: center; color: var(--muted); }
+.upload { display: grid; gap: 10px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.upload h3 { margin: 0; font-family: var(--f-display); font-size: 17px; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+a.btn { text-decoration: none; }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; z-index: 50; max-width: calc(100vw - 32px); }
+.foot { font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .btn, .stat { transition: border-color .15s, box-shadow .15s, filter .15s; } }
+/* Connexion */
+.login { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-left, 0px)); }
+.login form { width: min(380px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; display: grid; gap: 14px; box-shadow: var(--shadow); }
+.login img { width: 64px; height: 64px; border-radius: 14px; }
+.hint { font-size: 13px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+</style>
+</head>
+<body>
+
+<div class="login" id="login" hidden>
+  <form id="fLogin">
+    <img src="icons/icon-192.png" alt="">
+    <h1>Gestion de flotte</h1>
+    <p class="muted" style="margin:0">Connectez-vous pour retrouver la flotte sur tous vos appareils.</p>
+    <div class="field"><label for="lEmail">Adresse e-mail</label><input id="lEmail" type="email" autocomplete="username" required></div>
+    <div class="field"><label for="lPass">Mot de passe</label><input id="lPass" type="password" autocomplete="current-password" required></div>
+    <p class="err" id="lErr"></p>
+    <button class="btn primary" type="submit" id="lOk" style="justify-content:center">Se connecter</button>
+  </form>
+</div>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Gestion de flotte</h1>
+      <div class="sub" id="sub">Chargement des véhicules…</div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="btnInstall" type="button" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M12 8v7m0 0-3-3m3 3 3-3"/></svg>Installer l'appli</button>
+      <button class="btn" id="btnImport" type="button" title="Importer une liste depuis Excel ou CSV">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15V3m0 0-4 4m4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Importer</button>
+      <button class="btn" id="btnExport" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>Exporter Excel</button>
+      <button class="btn primary" id="btnAdd" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Ajouter un véhicule</button>
+      <input type="file" id="fileImport" accept=".xlsx,.xls,.csv" hidden>
+    </div>
+  </header>
+
+  <section class="stats" aria-label="Filtrer par statut">
+    <button class="stat" data-f="tous" aria-pressed="true" type="button"><span class="l">Toute la flotte</span><span class="n" id="nTous">0</span></button>
+    <button class="stat attente" data-f="attente" aria-pressed="false" type="button"><span class="dot"></span><span class="l">En attente</span><span class="n" id="nAttente">0</span></button>
+    <button class="stat sortie" data-f="sortie" aria-pressed="false" type="button"><span class="dot"></span><span class="l">Sortis</span><span class="n" id="nSortie">0</span></button>
+    <button class="stat maintenance" data-f="maintenance" aria-pressed="false" type="button"><span class="dot"></span><span class="l">En maintenance</span><span class="n" id="nMaint">0</span></button>
+  </section>
+
+  <div class="alert" id="ctAlert" hidden></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tabV" aria-selected="true" type="button">Véhicules</button>
+    <button class="tab" role="tab" id="tabH" aria-selected="false" type="button">Historique</button>
+  </div>
+
+  <section class="panel" id="panelV">
+    <div class="toolbar">
+      <label class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Rechercher une plaque, une marque, un conducteur…" autocomplete="off"></label>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="table-scroll">
+      <table class="vehicles">
+        <thead><tr>
+          <th><button type="button" data-sort="plaque">Plaque</button></th>
+          <th><button type="button" data-sort="marque">Marque / modèle</button></th>
+          <th><button type="button" data-sort="statut">Statut</button></th>
+          <th><button type="button" data-sort="conducteur">Utilisé par</button></th>
+          <th><button type="button" data-sort="prochainCT">Prochain CT</button></th>
+          <th class="row-actions"><span class="muted">Actions</span></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="empty" hidden>
+      <h2>Aucun véhicule enregistré</h2>
+      <p>Ajoutez vos véhicules avec leur plaque, leur marque et leur modèle, ou importez la liste depuis un fichier Excel (colonnes Plaque, Marque, Modèle).</p>
+      <div class="actions"><button class="btn primary" type="button" data-act="add">Ajouter un véhicule</button><button class="btn" type="button" data-act="import">Importer un fichier Excel</button><button class="btn" type="button" data-act="demo">Charger des exemples</button></div>
+    </div>
+    <div class="empty" id="noMatch" hidden><p>Aucun véhicule ne correspond à ce filtre.</p></div>
+  </section>
+
+  <section class="panel" id="panelH" hidden>
+    <ul class="log" id="log"></ul>
+    <div class="empty" id="logEmpty" hidden><p>Les sorties, retours et passages en maintenance apparaîtront ici.</p></div>
+  </section>
+
+  <p class="hint" id="iosHint" hidden>Pour installer l'appli sur iPhone : appuyez sur le bouton Partager de Safari, puis sur « Sur l'écran d'accueil ».</p>
+  <p class="foot"><span id="foot"></span> <button class="btn sm" type="button" id="btnLogout" hidden>Se déconnecter</button></p>
+</div>
+
+<!-- Ajouter / modifier -->
+<dialog id="dlgVehicle">
+  <form id="fVehicle" method="dialog">
+    <h2 id="dlgVehicleTitle">Ajouter un véhicule</h2>
+    <div class="field"><label for="vPlaque">Plaque d'immatriculation</label><input id="vPlaque" required placeholder="AB-123-CD" autocomplete="off"></div>
+    <div class="grid2">
+      <div class="field"><label for="vMarque">Marque</label><input id="vMarque" required placeholder="Renault" list="marques"></div>
+      <div class="field"><label for="vModele">Modèle</label><input id="vModele" required placeholder="Kangoo"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="vAnnee">Année</label><input id="vAnnee" inputmode="numeric" placeholder="2022"></div>
+      <div class="field"><label for="vKm">Kilométrage</label><input id="vKm" inputmode="numeric" placeholder="45 000"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label for="vDernierCT">Dernier contrôle technique</label><input id="vDernierCT" type="date"></div>
+      <div class="field"><label for="vProchainCT">Prochain contrôle technique</label><input id="vProchainCT" type="date"></div>
+    </div>
+    <div class="field"><label for="vStatut">Statut</label>
+      <select id="vStatut"><option value="attente">En attente</option><option value="sortie">Sorti</option><option value="maintenance">En maintenance</option></select></div>
+    <div class="field" id="vCondField"><label for="vCond">Conducteur</label><input id="vCond" placeholder="Nom de la personne" list="conducteurs"></div>
+    <div class="field"><label for="vNote">Note</label><textarea id="vNote" placeholder="Carte carburant, emplacement, remarque…"></textarea></div>
+    <p class="err" id="vErr"></p>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Annuler</button><button class="btn primary" type="submit">Enregistrer</button></div>
+  </form>
+</dialog>
+
+<!-- Sortie / maintenance -->
+<dialog id="dlgMove">
+  <form id="fMove" method="dialog">
+    <h2 id="mTitle">Sortie du véhicule</h2>
+    <div id="mPlate"></div>
+    <div class="field" id="mCondField"><label for="mCond">Qui prend le véhicule ?</label><input id="mCond" placeholder="Nom de la personne" list="conducteurs" autocomplete="off"></div>
+    <div class="field"><label for="mNote" id="mNoteLabel">Motif (facultatif)</label><input id="mNote" placeholder="Intervention client, rendez-vous…"></div>
+    <div class="field" id="mKmField"><label for="mKm">Kilométrage au compteur (facultatif)</label><input id="mKm" inputmode="numeric"></div>
+    <p class="err" id="mErr"></p>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Annuler</button><button class="btn primary" type="submit" id="mOk">Valider la sortie</button></div>
+  </form>
+</dialog>
+
+<!-- Dossier du véhicule : CT + documents -->
+<dialog id="dlgDocs" class="wide">
+  <form id="fDocs" method="dialog">
+    <div class="dossier-head"><span id="dPlate"></span><h2 id="dTitle">Documents</h2></div>
+    <div class="ct-box">
+      <div><div class="k">Dernier CT</div><div class="v" id="dLast">—</div></div>
+      <div><div class="k">Prochain CT</div><div class="v" id="dNext">—</div><div id="dNextRel"></div></div>
+    </div>
+    <ul class="doclist" id="dList"></ul>
+    <div class="upload" id="dUpload">
+      <h3>Ajouter un document</h3>
+      <div class="grid2">
+        <div class="field"><label for="dType">Type</label>
+          <select id="dType"><option>Contrôle technique</option><option>Contre-visite</option><option>Carte grise</option><option>Assurance</option><option>Facture d'entretien</option><option>Autre</option></select></div>
+        <div class="field"><label for="dDate">Date du document</label><input id="dDate" type="date"></div>
+      </div>
+      <div class="field"><label for="dFile">Fichier (PDF ou photo, 20 Mo maximum)</label><input id="dFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></div>
+      <div id="dCtOpts">
+        <label class="check"><input type="checkbox" id="dSetCT" checked> Enregistrer comme dernier CT et fixer le prochain au</label>
+        <div class="field" style="margin-top:6px"><input id="dNextCT" type="date" aria-label="Date du prochain contrôle technique"></div>
+      </div>
+      <p class="err" id="dErr"></p>
+      <div class="dlg-actions"><button class="btn primary" type="button" id="dSend">Ajouter le document</button></div>
+    </div>
+    <p class="muted" id="dReadonly" hidden>Seules les personnes qui peuvent modifier cette page peuvent ajouter des documents.</p>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Fermer</button></div>
+  </form>
+</dialog>
+
+<!-- Confirmation -->
+<dialog id="dlgConfirm">
+  <form id="fConfirm" method="dialog">
+    <h2>Supprimer ce véhicule ?</h2>
+    <p class="muted" id="cText"></p>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Annuler</button><button class="btn primary" type="submit" style="background:var(--maint);border-color:var(--maint)">Supprimer</button></div>
+  </form>
+</dialog>
+
+<datalist id="marques"></datalist>
+<datalist id="conducteurs"></datalist>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const LABEL = { attente: "En attente", sortie: "Sorti", maintenance: "En maintenance" };
+  const ACTION = { sortie: "Sortie", retour: "Retour", maintenance: "Mise en maintenance", fin_maintenance: "Fin de maintenance", ajout: "Ajout", modif: "Modification", suppression: "Suppression", document: "Document ajouté", document_suppr: "Document supprimé" };
+
+  let vehicles = [];   // {id, plaque, marque, modele, annee, km, statut, conducteur, depuis, motif, note, dernierCT, prochainCT}
+  let history = [];    // {id, date, action, plaque, vehicule, conducteur, note}
+  let docs = [];       // {id, vehiculeId, plaque, type, nom, date, assetId | dataUrl, contentType, taille, ajouteLe}
+  let filter = "tous", query = "", sortKey = "plaque", sortDir = 1;
+  let store = null;
+
+  /* ---------- Stockage : base partagée de l'artifact, sinon navigateur ---------- */
+  function localStore() {
+    const KEY = "flotte.v1";
+    let data = { vehicles: {}, history: [], docs: [] };
+    try { const raw = localStorage.getItem(KEY); if (raw) data = JSON.parse(raw); } catch (e) {}
+    data.docs = data.docs || [];
+    const subs = { v: [], h: [], d: [] };
+    const save = () => { try { localStorage.setItem(KEY, JSON.stringify(data)); return true; } catch (e) { return false; } };
+    const emit = () => {
+      subs.v.forEach((f) => f(Object.entries(data.vehicles).map(([id, v]) => ({ id, ...v }))));
+      subs.h.forEach((f) => f(data.history.slice()));
+      subs.d.forEach((f) => f(data.docs.slice()));
+    };
+    const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    return {
+      kind: "local",
+      onVehicles(f) { subs.v.push(f); f(Object.entries(data.vehicles).map(([id, v]) => ({ id, ...v }))); },
+      onHistory(f) { subs.h.push(f); f(data.history.slice()); },
+      async add(v) { const id = uid(); data.vehicles[id] = v; save(); emit(); return id; },
+      async update(id, patch) { data.vehicles[id] = { ...data.vehicles[id], ...patch }; save(); emit(); },
+      async remove(id) { delete data.vehicles[id]; save(); emit(); },
+      async log(h) { data.history.unshift({ id: uid(), ...h }); data.history = data.history.slice(0, 1000); save(); emit(); },
+      canUpload: true,
+      onDocs(f) { subs.d.push(f); f(data.docs.slice()); },
+      async upload(file) {
+        if (file.size > 3 * 1024 * 1024) throw new Error("Dans la version hors ligne, un document ne peut pas dépasser 3 Mo.");
+        const dataUrl = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = ko; r.readAsDataURL(file); });
+        return { dataUrl };
+      },
+      async addDoc(d) {
+        data.docs.unshift({ id: uid(), ...d });
+        if (!save()) { data.docs.shift(); throw new Error("Plus de place dans ce navigateur pour stocker ce document."); }
+        emit();
+      },
+      async removeDoc(d) { data.docs = data.docs.filter((x) => x.id !== d.id); save(); emit(); },
+      url(d) { return d.dataUrl || ""; },
+      async openUrl(d) { const blob = await (await fetch(d.dataUrl)).blob(); return URL.createObjectURL(blob); },
+    };
+  }
+
+  function supaStore(sb) {
+    const CK = "flotte.cache.v1", T = { v: "vehicules", h: "historique", d: "documents" };
+    const subs = { v: [], h: [], d: [] };
+    let cache = { v: [], h: [], d: [] };
+    try { cache = JSON.parse(localStorage.getItem(CK)) || cache; } catch (e) {}
+    const keep = () => { try { localStorage.setItem(CK, JSON.stringify(cache)); } catch (e) {} };
+    const fail = (error) => { throw new Error(navigator.onLine === false ? "Pas de connexion internet : réessayez quand le réseau revient." : error.message); };
+    const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+    async function pull(w) {
+      let q = sb.from(T[w]).select("id,data");
+      if (w === "h") q = q.order("date", { ascending: false }).limit(300);
+      const { data, error } = await q; if (error) fail(error);
+      let list = data.map((x) => ({ id: x.id, ...x.data }));
+      if (w === "d" && list.length) {
+        const r = await sb.storage.from("documents").createSignedUrls(list.map((d) => d.path), 3600);
+        const byPath = {}; (r.data || []).forEach((x) => { if (x.signedUrl) byPath[x.path] = x.signedUrl; });
+        list = list.map((d) => ({ ...d, _url: byPath[d.path] || "" }));
+      }
+      cache[w] = list; keep();
+      subs[w].forEach((f) => f(list.slice()));
+    }
+    const pullAll = () => Promise.all(["v", "h", "d"].map((w) => pull(w))).catch((e) => showToast("Synchronisation impossible : " + e.message));
+    sb.channel("flotte").on("postgres_changes", { event: "*", schema: "public" }, (p) => {
+      const w = { vehicules: "v", historique: "h", documents: "d" }[p.table]; if (w) pull(w).catch(() => {});
+    }).subscribe();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pullAll(); });
+    window.addEventListener("online", pullAll);
+    return {
+      kind: "supabase", canUpload: true, start: pullAll,
+      onVehicles(f) { subs.v.push(f); f(cache.v.slice()); },
+      onHistory(f) { subs.h.push(f); f(cache.h.slice()); },
+      onDocs(f) { subs.d.push(f); f(cache.d.slice()); },
+      async add(v) { const id = uid(); const { error } = await sb.from("vehicules").insert({ id, data: v }); if (error) fail(error); await pull("v"); return id; },
+      async update(id, patch) { const { error } = await sb.rpc("merge_vehicule", { p_id: id, p_patch: patch }); if (error) fail(error); await pull("v"); },
+      async remove(id) { const { error } = await sb.from("vehicules").delete().eq("id", id); if (error) fail(error); await pull("v"); },
+      async log(h) { const { error } = await sb.from("historique").insert({ id: uid(), date: h.date, data: h }); if (error) fail(error); await pull("h"); },
+      async upload(file) {
+        if (file.size > 20 * 1024 * 1024) throw new Error("Ce fichier dépasse 20 Mo.");
+        const safe = file.name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
+        const path = `${uid()}/${safe}`;
+        const { error } = await sb.storage.from("documents").upload(path, file, { contentType: file.type || undefined, upsert: false });
+        if (error) fail(error);
+        return { path };
+      },
+      async addDoc(d) { const { error } = await sb.from("documents").insert({ id: uid(), data: d }); if (error) fail(error); await pull("d"); },
+      async removeDoc(d) {
+        const { error } = await sb.from("documents").delete().eq("id", d.id); if (error) fail(error);
+        await sb.storage.from("documents").remove([d.path]); await pull("d");
+      },
+      url(d) { return d._url || ""; },
+      async openUrl(d) { const { data, error } = await sb.storage.from("documents").createSignedUrl(d.path, 600); if (error) fail(error); return data.signedUrl; },
+    };
+  }
+
+  async function init() {
+    const cfg = window.FLOTTE_CONFIG || {};
+    if (cfg.supabaseUrl && cfg.supabaseKey && window.supabase) {
+      const sb = window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } });
+      const { data } = await sb.auth.getSession();
+      if (!data.session) {
+        $("#login").hidden = false; $("#lEmail").focus();
+        $("#fLogin").addEventListener("submit", async (e) => {
+          e.preventDefault(); $("#lErr").textContent = ""; $("#lOk").disabled = true;
+          const { error } = await sb.auth.signInWithPassword({ email: $("#lEmail").value.trim(), password: $("#lPass").value });
+          $("#lOk").disabled = false;
+          if (error) { $("#lErr").textContent = /invalid/i.test(error.message) ? "E-mail ou mot de passe incorrect." : error.message; return; }
+          $("#login").hidden = true; start(supaStore(sb));
+        });
+      } else start(supaStore(sb));
+      $("#btnLogout").hidden = false;
+      $("#btnLogout").onclick = async () => { await sb.auth.signOut(); try { localStorage.removeItem("flotte.cache.v1"); } catch (e) {} location.reload(); };
+      $("#foot").textContent = "Données synchronisées entre tous vos appareils.";
+    } else {
+      $("#foot").textContent = "Données enregistrées sur cet appareil uniquement. Pensez à exporter régulièrement vers Excel.";
+      start(localStore());
+    }
+  }
+  function start(st) {
+    store = st;
+    store.onVehicles((list) => { vehicles = list; render(); if (dossierId && $("#dlgDocs").open) renderDossier(); });
+    store.onDocs((list) => { docs = list.sort((a, b) => (b.date || b.ajouteLe || "").localeCompare(a.date || a.ajouteLe || "")); render(); if (dossierId && $("#dlgDocs").open) renderDossier(); });
+    store.onHistory((list) => { history = list.sort((a, b) => (b.date || "").localeCompare(a.date || "")); renderLog(); });
+    if (store.start) store.start();
+  }
+
+  /* ---------- Utilitaires ---------- */
+  const norm = (s) => (s || "").toString().normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const plateFmt = (p) => {
+    const s = (p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (/^[A-Z]{2}\d{3}[A-Z]{2}$/.test(s)) return s.slice(0, 2) + "-" + s.slice(2, 5) + "-" + s.slice(5);
+    return (p || "").toUpperCase().trim();
+  };
+  const plateKey = (p) => (p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const esc = (s) => (s == null ? "" : String(s)).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmtDate = (iso) => { if (!iso) return ""; const d = new Date(iso); return d.toLocaleDateString("fr-FR") + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }); };
+  const since = (iso) => {
+    if (!iso) return "";
+    const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+    if (m < 1) return "à l'instant";
+    if (m < 60) return "depuis " + m + " min";
+    const h = Math.round(m / 60); if (h < 24) return "depuis " + h + " h";
+    const j = Math.round(h / 24); return "depuis " + j + " jour" + (j > 1 ? "s" : "");
+  };
+  const today0 = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
+  const dayFmt = (ymd) => ymd ? new Date(ymd + "T00:00:00").toLocaleDateString("fr-FR") : "";
+  const isoDay = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const plusYears = (ymd, n) => { if (!ymd) return ""; const d = new Date(ymd + "T00:00:00"); d.setFullYear(d.getFullYear() + n); return isoDay(d); };
+  const CT_SOON = 30; // jours avant échéance pour l'alerte
+  function ctInfo(ymd) {
+    if (!ymd) return { cls: "none", days: null, rel: "" };
+    const days = Math.round((new Date(ymd + "T00:00:00") - today0()) / 86400000);
+    if (days < 0) return { cls: "late", days, rel: `Dépassé de ${-days} j` };
+    if (days === 0) return { cls: "late", days, rel: "Aujourd'hui" };
+    if (days <= CT_SOON) return { cls: "soon", days, rel: `Dans ${days} j` };
+    const m = Math.round(days / 30.4);
+    return { cls: "ok", days, rel: m < 12 ? `Dans ${m} mois` : `Dans ${Math.floor(m / 12)} an${m >= 24 ? "s" : ""}${m % 12 ? " " + (m % 12) + " mois" : ""}` };
+  }
+  const ctHTML = (ymd) => { const c = ctInfo(ymd); return ymd ? `<span class="ct ${c.cls}"><span class="d">${dayFmt(ymd)}</span><span class="r">${c.rel}</span></span>` : '<span class="ct none">Non renseigné</span>'; };
+  const kmFmt = (k) => (k === "" || k == null || isNaN(+k)) ? "" : Number(k).toLocaleString("fr-FR") + " km";
+  const plateHTML = (p) => `<span class="plate"><span class="eu">F</span><span class="num">${esc(p)}</span></span>`;
+  let toastT;
+  function showToast(msg) { const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => (t.hidden = true), 2800); }
+
+  /* ---------- Rendu ---------- */
+  function render() {
+    const c = { attente: 0, sortie: 0, maintenance: 0 };
+    vehicles.forEach((v) => { c[v.statut] = (c[v.statut] || 0) + 1; });
+    $("#nTous").textContent = vehicles.length;
+    $("#nAttente").textContent = c.attente; $("#nSortie").textContent = c.sortie; $("#nMaint").textContent = c.maintenance;
+    $("#sub").textContent = vehicles.length
+      ? `${vehicles.length} véhicule${vehicles.length > 1 ? "s" : ""} · ${c.attente} disponible${c.attente > 1 ? "s" : ""}`
+      : "Aucun véhicule pour l'instant";
+
+    const marques = [...new Set(vehicles.map((v) => v.marque).filter(Boolean))].sort();
+    $("#marques").innerHTML = marques.map((m) => `<option value="${esc(m)}">`).join("");
+    const conds = [...new Set([...vehicles.map((v) => v.conducteur), ...history.map((h) => h.conducteur)].filter(Boolean))].sort();
+    $("#conducteurs").innerHTML = conds.map((m) => `<option value="${esc(m)}">`).join("");
+
+    const q = norm(query);
+    const list = vehicles
+      .filter((v) => filter === "tous" || v.statut === filter || (filter === "ct" && v.prochainCT && ctInfo(v.prochainCT).days <= CT_SOON))
+      .filter((v) => !q || norm([v.plaque, plateKey(v.plaque), v.marque, v.modele, v.conducteur, v.motif, v.note].join(" ")).includes(q))
+      .sort((a, b) => norm(a[sortKey]).localeCompare(norm(b[sortKey]), "fr", { numeric: true }) * sortDir);
+
+    const late = vehicles.filter((v) => v.prochainCT && ctInfo(v.prochainCT).days <= 0).length;
+    const soon = vehicles.filter((v) => v.prochainCT && ctInfo(v.prochainCT).days > 0 && ctInfo(v.prochainCT).days <= CT_SOON).length;
+    const al = $("#ctAlert");
+    al.hidden = !(late || soon);
+    al.className = "alert" + (late ? " late" : "");
+    if (late || soon) {
+      const parts = [];
+      if (late) parts.push(`<strong>${late} contrôle${late > 1 ? "s" : ""} technique${late > 1 ? "s" : ""} dépassé${late > 1 ? "s" : ""}</strong>`);
+      if (soon) parts.push(`<strong>${soon} à faire dans les ${CT_SOON} jours</strong>`);
+      al.innerHTML = `<span>${parts.join(" · ")}</span><button class="btn sm" type="button" id="ctFilter">${filter === "ct" ? "Voir toute la flotte" : "Voir ces véhicules"}</button>`;
+      $("#ctFilter").onclick = () => { setFilter(filter === "ct" ? "tous" : "ct"); };
+    }
+
+    $("#empty").hidden = vehicles.length > 0;
+    $("#noMatch").hidden = !(vehicles.length > 0 && list.length === 0);
+    $("#count").textContent = vehicles.length ? `${list.length} affiché${list.length > 1 ? "s" : ""}` : "";
+    $("#rows").innerHTML = list.map((v) => {
+      let btns = "";
+      if (v.statut === "attente") btns = `<button class="btn sm primary" data-act="sortie" data-id="${v.id}" type="button">Sortir</button><button class="btn sm" data-act="maintenance" data-id="${v.id}" type="button">Maintenance</button>`;
+      else if (v.statut === "sortie") btns = `<button class="btn sm primary" data-act="retour" data-id="${v.id}" type="button">Retour</button>`;
+      else btns = `<button class="btn sm primary" data-act="fin_maintenance" data-id="${v.id}" type="button">Remettre en service</button>`;
+      const nd = docs.filter((d) => d.vehiculeId === v.id).length;
+      btns += `<button class="btn sm" data-act="docs" data-id="${v.id}" type="button">Documents${nd ? ` (${nd})` : ""}</button>`;
+      btns += `<button class="btn sm" data-act="edit" data-id="${v.id}" type="button" aria-label="Modifier ${esc(v.plaque)}">Modifier</button>`;
+      const details = [v.annee, kmFmt(v.km)].filter(Boolean).join(" · ");
+      let who = '<span class="muted">—</span>';
+      if (v.statut === "sortie") who = `<strong>${esc(v.conducteur || "Non renseigné")}</strong><span class="since" title="${esc(fmtDate(v.depuis))}">${since(v.depuis)}${v.motif ? " · " + esc(v.motif) : ""}</span>`;
+      else if (v.statut === "maintenance") who = `<span class="since" title="${esc(fmtDate(v.depuis))}">${v.motif ? esc(v.motif) + " · " : ""}${since(v.depuis)}</span>`;
+      return `<tr>
+        <td>${plateHTML(v.plaque)}</td>
+        <td class="model">${esc(v.marque)} ${esc(v.modele)}${details ? `<small>${esc(details)}</small>` : ""}</td>
+        <td class="st"><span class="pill ${v.statut}">${LABEL[v.statut] || v.statut}</span></td>
+        <td class="who">${who}</td>
+        <td class="ctc">${ctHTML(v.prochainCT)}</td>
+        <td class="row-actions"><div class="actions">${btns}</div></td></tr>`;
+    }).join("");
+  }
+
+  function renderLog() {
+    $("#logEmpty").hidden = history.length > 0;
+    $("#log").innerHTML = history.slice(0, 300).map((h) => `<li>
+      <time datetime="${esc(h.date)}">${esc(fmtDate(h.date))}</time>
+      ${plateHTML(h.plaque)}
+      <div class="what"><strong>${esc(ACTION[h.action] || h.action)}</strong> · ${esc(h.vehicule || "")}${h.conducteur ? " · par <strong>" + esc(h.conducteur) + "</strong>" : ""}${h.note ? ' <span class="muted">· ' + esc(h.note) + "</span>" : ""}</div>
+    </li>`).join("");
+    render();
+  }
+
+  /* ---------- Filtres, recherche, tri, onglets ---------- */
+  function setFilter(f) {
+    filter = f;
+    document.querySelectorAll(".stat").forEach((x) => x.setAttribute("aria-pressed", x.dataset.f === f));
+    showTab("v"); render();
+  }
+  document.querySelectorAll(".stat").forEach((b) => b.addEventListener("click", () => setFilter(b.dataset.f)));
+  $("#q").addEventListener("input", (e) => { query = e.target.value; render(); });
+  document.querySelectorAll("th button[data-sort]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.sort; sortDir = sortKey === k ? -sortDir : 1; sortKey = k; render();
+  }));
+  function showTab(t) {
+    $("#tabV").setAttribute("aria-selected", t === "v"); $("#tabH").setAttribute("aria-selected", t === "h");
+    $("#panelV").hidden = t !== "v"; $("#panelH").hidden = t !== "h";
+  }
+  $("#tabV").onclick = () => showTab("v");
+  $("#tabH").onclick = () => showTab("h");
+  if (location.hash === "#historique") showTab("h");
+
+  document.querySelectorAll("dialog [data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
+
+  /* ---------- Ajouter / modifier ---------- */
+  let editId = null;
+  function openVehicle(v) {
+    editId = v ? v.id : null;
+    $("#dlgVehicleTitle").textContent = v ? "Modifier le véhicule" : "Ajouter un véhicule";
+    $("#vPlaque").value = v ? v.plaque : ""; $("#vMarque").value = v ? v.marque : ""; $("#vModele").value = v ? v.modele : "";
+    $("#vAnnee").value = v ? v.annee || "" : ""; $("#vKm").value = v ? v.km || "" : "";
+    $("#vDernierCT").value = v ? v.dernierCT || "" : ""; $("#vProchainCT").value = v ? v.prochainCT || "" : "";
+    $("#vStatut").value = v ? v.statut : "attente"; $("#vCond").value = v ? v.conducteur || "" : ""; $("#vNote").value = v ? v.note || "" : "";
+    $("#vErr").textContent = ""; syncCond();
+    $("#dlgVehicle").showModal(); $("#vPlaque").focus();
+  }
+  function syncCond() { $("#vCondField").hidden = $("#vStatut").value !== "sortie"; }
+  $("#vStatut").addEventListener("change", syncCond);
+  $("#vDernierCT").addEventListener("change", () => { if (!$("#vProchainCT").value && $("#vDernierCT").value) $("#vProchainCT").value = plusYears($("#vDernierCT").value, 2); });
+  $("#btnAdd").onclick = () => openVehicle(null);
+
+  $("#fVehicle").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const plaque = plateFmt($("#vPlaque").value);
+    const marque = $("#vMarque").value.trim(), modele = $("#vModele").value.trim();
+    if (!plaque || !marque || !modele) { $("#vErr").textContent = "La plaque, la marque et le modèle sont obligatoires."; return; }
+    const dup = vehicles.find((v) => plateKey(v.plaque) === plateKey(plaque) && v.id !== editId);
+    if (dup) { $("#vErr").textContent = `La plaque ${plaque} est déjà enregistrée (${dup.marque} ${dup.modele}).`; return; }
+    const statut = $("#vStatut").value;
+    const km = $("#vKm").value.replace(/\D/g, "");
+    const rec = { plaque, marque, modele, annee: $("#vAnnee").value.trim(), km: km ? Number(km) : "", statut,
+      conducteur: statut === "sortie" ? $("#vCond").value.trim() : "", note: $("#vNote").value.trim(),
+      dernierCT: $("#vDernierCT").value, prochainCT: $("#vProchainCT").value };
+    try {
+      if (editId) {
+        const old = vehicles.find((v) => v.id === editId);
+        if (old.statut !== statut) rec.depuis = new Date().toISOString();
+        await store.update(editId, rec);
+        await store.log({ date: new Date().toISOString(), action: "modif", plaque, vehicule: marque + " " + modele, conducteur: rec.conducteur, note: "" });
+        showToast("Véhicule modifié");
+      } else {
+        rec.depuis = new Date().toISOString(); rec.creeLe = rec.depuis;
+        await store.add(rec);
+        await store.log({ date: rec.depuis, action: "ajout", plaque, vehicule: marque + " " + modele, conducteur: rec.conducteur, note: "" });
+        showToast("Véhicule ajouté");
+      }
+      $("#dlgVehicle").close();
+    } catch (err) { $("#vErr").textContent = "Enregistrement refusé : " + (err.message || err.code || err); }
+  });
+
+  /* ---------- Sortie / retour / maintenance ---------- */
+  let move = null;
+  function openMove(v, kind) {
+    move = { v, kind };
+    const isOut = kind === "sortie";
+    $("#mTitle").textContent = isOut ? "Sortie du véhicule" : "Mise en maintenance";
+    $("#mPlate").innerHTML = plateHTML(v.plaque) + ` <span class="muted">${esc(v.marque)} ${esc(v.modele)}</span>`;
+    $("#mCondField").hidden = !isOut;
+    $("#mNoteLabel").textContent = isOut ? "Motif (facultatif)" : "Raison de la maintenance";
+    $("#mNote").placeholder = isOut ? "Intervention client, rendez-vous…" : "Vidange, pneus, contrôle technique…";
+    $("#mKmField").hidden = false;
+    $("#mOk").textContent = isOut ? "Valider la sortie" : "Mettre en maintenance";
+    $("#mCond").value = ""; $("#mNote").value = ""; $("#mKm").value = ""; $("#mErr").textContent = "";
+    $("#dlgMove").showModal(); (isOut ? $("#mCond") : $("#mNote")).focus();
+  }
+  $("#fMove").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const { v, kind } = move;
+    const cond = $("#mCond").value.trim(), note = $("#mNote").value.trim(), km = $("#mKm").value.replace(/\D/g, "");
+    if (kind === "sortie" && !cond) { $("#mErr").textContent = "Indiquez qui prend le véhicule."; return; }
+    const now = new Date().toISOString();
+    const patch = { statut: kind, conducteur: kind === "sortie" ? cond : "", depuis: now, motif: note };
+    if (km) patch.km = Number(km);
+    try {
+      await store.update(v.id, patch);
+      await store.log({ date: now, action: kind, plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: patch.conducteur, note });
+      $("#dlgMove").close();
+      showToast(kind === "sortie" ? `${v.plaque} sorti par ${cond}` : `${v.plaque} en maintenance`);
+    } catch (err) { $("#mErr").textContent = "Enregistrement refusé : " + (err.message || err.code || err); }
+  });
+  async function backToPark(v, action) {
+    const now = new Date().toISOString();
+    try {
+      await store.update(v.id, { statut: "attente", conducteur: "", depuis: now, motif: "" });
+      await store.log({ date: now, action, plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: v.conducteur || "", note: "" });
+      showToast(action === "retour" ? `${v.plaque} rendu, de nouveau disponible` : `${v.plaque} remis en service`);
+    } catch (err) { showToast("Enregistrement refusé : " + (err.message || err.code || err)); }
+  }
+
+  /* ---------- Suppression ---------- */
+  let delId = null;
+  $("#fConfirm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const v = vehicles.find((x) => x.id === delId); if (!v) return;
+    try {
+      await store.remove(v.id);
+      await store.log({ date: new Date().toISOString(), action: "suppression", plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: "", note: "" });
+      $("#dlgConfirm").close(); $("#dlgVehicle").close(); showToast("Véhicule supprimé");
+    } catch (err) { showToast("Suppression refusée : " + (err.message || err.code || err)); }
+  });
+  // bouton Supprimer dans la fenêtre de modification
+  const delBtn = document.createElement("button");
+  delBtn.type = "button"; delBtn.className = "btn danger"; delBtn.textContent = "Supprimer"; delBtn.style.marginRight = "auto";
+  $("#fVehicle .dlg-actions").prepend(delBtn);
+  delBtn.onclick = () => {
+    const v = vehicles.find((x) => x.id === editId); if (!v) return;
+    delId = v.id; $("#cText").textContent = `${v.plaque} · ${v.marque} ${v.modele} sera retiré de la flotte. L'historique est conservé.`;
+    $("#dlgConfirm").showModal();
+  };
+  const _openVehicle = openVehicle;
+  openVehicle = (v) => { delBtn.hidden = !v; _openVehicle(v); };
+
+  /* ---------- Dossier : contrôle technique et documents ---------- */
+  let dossierId = null, pendingDel = null;
+  function openDossier(v) {
+    dossierId = v.id; pendingDel = null;
+    $("#dType").value = "Contrôle technique"; $("#dDate").value = isoDay(new Date()); $("#dFile").value = "";
+    $("#dSetCT").checked = true; $("#dNextCT").value = plusYears(isoDay(new Date()), 2); $("#dErr").textContent = "";
+    $("#dUpload").hidden = !store.canUpload; $("#dReadonly").hidden = store.canUpload;
+    syncDocType(); renderDossier();
+    $("#dlgDocs").showModal();
+  }
+  function renderDossier() {
+    const v = vehicles.find((x) => x.id === dossierId); if (!v) { $("#dlgDocs").close(); return; }
+    $("#dPlate").innerHTML = plateHTML(v.plaque);
+    $("#dTitle").textContent = `${v.marque} ${v.modele}`;
+    $("#dLast").textContent = v.dernierCT ? dayFmt(v.dernierCT) : "—";
+    $("#dNext").textContent = v.prochainCT ? dayFmt(v.prochainCT) : "—";
+    const c = ctInfo(v.prochainCT);
+    $("#dNextRel").innerHTML = v.prochainCT ? `<span class="ct ${c.cls}"><span class="r">${c.rel}</span></span>` : '<span class="muted">À renseigner</span>';
+    const list = docs.filter((d) => d.vehiculeId === v.id);
+    $("#dList").innerHTML = list.length ? list.map((d) => {
+      const url = store.url(d), isImg = (d.contentType || "").startsWith("image/");
+      const thumb = isImg && url ? `<img src="${esc(url)}" alt="">` : "PDF";
+      const del = pendingDel === d.id
+        ? `<button class="btn sm danger" type="button" data-doc-del="${d.id}">Confirmer</button>`
+        : `<button class="btn sm" type="button" data-doc-ask="${d.id}" aria-label="Supprimer ${esc(d.nom)}">Supprimer</button>`;
+      return `<li><span class="thumb">${thumb}</span>
+        <span class="meta"><strong title="${esc(d.nom)}">${esc(d.type)}${d.date ? " du " + dayFmt(d.date) : ""}</strong><span>${esc(d.nom)}${d.taille ? " · " + (d.taille < 1048576 ? Math.max(1, Math.round(d.taille / 1024)) + " Ko" : (d.taille / 1048576).toFixed(1).replace(".", ",") + " Mo") : ""}</span></span>
+        <span class="ops"><button class="btn sm" type="button" data-doc-open="${d.id}">Ouvrir</button>${store.canUpload ? del : ""}</span></li>`;
+    }).join("") : '<li class="empty-li">Aucun document pour ce véhicule.</li>';
+  }
+  function syncDocType() {
+    const isCT = $("#dType").value === "Contrôle technique";
+    $("#dCtOpts").hidden = !isCT;
+    if (isCT && $("#dDate").value) $("#dNextCT").value = plusYears($("#dDate").value, 2);
+  }
+  $("#dType").addEventListener("change", syncDocType);
+  $("#dDate").addEventListener("change", syncDocType);
+
+  $("#dSend").addEventListener("click", async () => {
+    const v = vehicles.find((x) => x.id === dossierId); if (!v) return;
+    const file = $("#dFile").files[0];
+    if (!file) { $("#dErr").textContent = "Choisissez un fichier PDF ou une photo."; return; }
+    const btn = $("#dSend"); btn.disabled = true; btn.textContent = "Envoi en cours…"; $("#dErr").textContent = "";
+    try {
+      const up = await store.upload(file);
+      const type = $("#dType").value, date = $("#dDate").value, now = new Date().toISOString();
+      await store.addDoc({ vehiculeId: v.id, plaque: v.plaque, type, nom: file.name, date, contentType: file.type || "", taille: file.size, ajouteLe: now, ...up });
+      if (type === "Contrôle technique" && $("#dSetCT").checked && date) {
+        await store.update(v.id, { dernierCT: date, prochainCT: $("#dNextCT").value || plusYears(date, 2) });
+      }
+      await store.log({ date: now, action: "document", plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: "", note: type + (date ? " du " + dayFmt(date) : "") });
+      $("#dFile").value = ""; showToast("Document ajouté");
+    } catch (err) { $("#dErr").textContent = err.message || String(err); }
+    btn.disabled = false; btn.textContent = "Ajouter le document";
+  });
+
+  $("#dList").addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.docAsk) { pendingDel = b.dataset.docAsk; renderDossier(); return; }
+    if (b.dataset.docDel) {
+      const d = docs.find((x) => x.id === b.dataset.docDel); if (!d) return;
+      try {
+        await store.removeDoc(d); pendingDel = null;
+        await store.log({ date: new Date().toISOString(), action: "document_suppr", plaque: d.plaque, vehicule: "", conducteur: "", note: d.type + " · " + d.nom });
+        showToast("Document supprimé");
+      } catch (err) { showToast("Suppression refusée : " + (err.message || err.code || err)); }
+      return;
+    }
+    if (b.dataset.docOpen) {
+      const d = docs.find((x) => x.id === b.dataset.docOpen); if (!d) return;
+      try {
+        const url = await store.openUrl(d);
+        const a = document.createElement("a"); a.href = url; a.target = "_blank"; a.rel = "noopener";
+        document.body.appendChild(a); a.click(); a.remove();
+      } catch (err) { showToast("Document introuvable."); }
+    }
+  });
+
+  /* ---------- Actions des lignes ---------- */
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const act = b.dataset.act, v = vehicles.find((x) => x.id === b.dataset.id);
+    if (act === "add") openVehicle(null);
+    else if (act === "import") $("#fileImport").click();
+    else if (act === "demo") loadDemo();
+    else if (!v) return;
+    else if (act === "edit") openVehicle(v);
+    else if (act === "docs") openDossier(v);
+    else if (act === "sortie" || act === "maintenance") openMove(v, act);
+    else if (act === "retour" || act === "fin_maintenance") backToPark(v, act);
+  });
+
+  async function loadDemo() {
+    const now = new Date(), ago = (h) => new Date(now - h * 3600e3).toISOString();
+    const demo = [
+      { plaque: "FG-482-KT", marque: "Renault", modele: "Kangoo Van", annee: "2021", km: 68420, statut: "sortie", conducteur: "Exemple : Julien M.", depuis: ago(3), motif: "Intervention client", dernierCT: plusYears(isoDay(new Date(now - 20 * 86400e3)), -2), prochainCT: isoDay(new Date(+now + 20 * 86400e3)) },
+      { plaque: "GH-105-RD", marque: "Peugeot", modele: "Partner", annee: "2022", km: 41200, statut: "attente", conducteur: "", depuis: ago(20), note: "", dernierCT: "2025-03-14", prochainCT: "2027-03-14" },
+      { plaque: "EZ-731-LB", marque: "Citroën", modele: "Berlingo", annee: "2019", km: 112800, statut: "maintenance", conducteur: "", depuis: ago(50), motif: "Vidange et plaquettes", dernierCT: plusYears(isoDay(new Date(now - 6 * 86400e3)), -2), prochainCT: isoDay(new Date(now - 6 * 86400e3)) },
+      { plaque: "HB-260-NC", marque: "Dacia", modele: "Sandero", annee: "2023", km: 18950, statut: "attente", conducteur: "", depuis: ago(6), note: "" },
+      { plaque: "GK-918-PS", marque: "Toyota", modele: "Yaris Hybride", annee: "2022", km: 37600, statut: "sortie", conducteur: "Exemple : Sarah L.", depuis: ago(27), motif: "Déplacement site Nord" },
+    ];
+    for (const d of demo) { await store.add({ ...d, creeLe: now.toISOString(), exemple: true }); }
+    await store.log({ date: now.toISOString(), action: "ajout", plaque: "EXEMPLES", vehicule: "5 véhicules d'exemple", conducteur: "", note: "À supprimer avant usage réel" });
+    showToast("5 véhicules d'exemple ajoutés");
+  }
+
+  /* ---------- Import Excel / CSV ---------- */
+  $("#btnImport").onclick = () => $("#fileImport").click();
+  $("#fileImport").addEventListener("change", async (e) => {
+    const file = e.target.files[0]; e.target.value = ""; if (!file) return;
+    if (!window.XLSX) { showToast("Le module Excel n'a pas pu se charger."); return; }
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+      const pick = (r, names) => { for (const k of Object.keys(r)) if (names.includes(norm(k).replace(/[^a-z]/g, ""))) return String(r[k]).trim(); return ""; };
+      const pickDate = (r, names) => {
+        for (const k of Object.keys(r)) if (names.includes(norm(k).replace(/[^a-z]/g, ""))) {
+          const x = r[k];
+          if (x instanceof Date && !isNaN(x)) return isoDay(new Date(x.getTime() + 12 * 3600e3));
+          const m = String(x).trim().match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+          if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+          if (/^\d{4}-\d{2}-\d{2}/.test(String(x))) return String(x).slice(0, 10);
+        }
+        return "";
+      };
+      const known = new Set(vehicles.map((v) => plateKey(v.plaque)));
+      let added = 0, skipped = 0;
+      for (const r of rows) {
+        const plaque = plateFmt(pick(r, ["plaque", "immatriculation", "immat", "plaquedimmatriculation"]));
+        const marque = pick(r, ["marque"]), modele = pick(r, ["modele", "model"]);
+        if (!plaque || known.has(plateKey(plaque))) { skipped++; continue; }
+        const st = norm(pick(r, ["statut", "etat"]));
+        const statut = st.startsWith("sort") ? "sortie" : st.startsWith("maint") ? "maintenance" : "attente";
+        const km = pick(r, ["kilometrage", "km"]).replace(/\D/g, "");
+        await store.add({ plaque, marque, modele, annee: pick(r, ["annee"]), km: km ? Number(km) : "", statut,
+          conducteur: statut === "sortie" ? pick(r, ["conducteur", "utilisateur", "utilisepar"]) : "", depuis: new Date().toISOString(), note: pick(r, ["note", "remarque"]), creeLe: new Date().toISOString(),
+          dernierCT: pickDate(r, ["dernierct"]), prochainCT: pickDate(r, ["prochainct"]) });
+        known.add(plateKey(plaque)); added++;
+      }
+      if (added) await store.log({ date: new Date().toISOString(), action: "ajout", plaque: "IMPORT", vehicule: `${added} véhicule${added > 1 ? "s" : ""} importé${added > 1 ? "s" : ""} depuis ${file.name}`, conducteur: "", note: "" });
+      showToast(`${added} véhicule${added > 1 ? "s" : ""} importé${added > 1 ? "s" : ""}${skipped ? `, ${skipped} ignoré${skipped > 1 ? "s" : ""} (plaque vide ou déjà connue)` : ""}`);
+    } catch (err) { showToast("Fichier illisible : vérifiez qu'il s'agit d'un Excel ou d'un CSV."); }
+  });
+
+  /* ---------- Export Excel ---------- */
+  $("#btnExport").onclick = async () => {
+    if (!window.XLSX) { showToast("Le module Excel n'a pas pu se charger."); return; }
+    const sorted = vehicles.slice().sort((a, b) => plateKey(a.plaque).localeCompare(plateKey(b.plaque)));
+    const vRows = sorted.map((v) => ({
+      "Plaque": v.plaque, "Marque": v.marque, "Modèle": v.modele, "Année": v.annee || "", "Kilométrage": v.km === "" ? "" : v.km,
+      "Statut": LABEL[v.statut] || v.statut, "Utilisé par": v.statut === "sortie" ? v.conducteur || "" : "",
+      "Depuis le": fmtDate(v.depuis), "Motif": v.statut !== "attente" ? v.motif || "" : "", "Dernier CT": dayFmt(v.dernierCT), "Prochain CT": dayFmt(v.prochainCT),
+      "Échéance CT": v.prochainCT ? ctInfo(v.prochainCT).rel : "", "Documents": docs.filter((d) => d.vehiculeId === v.id).length, "Note": v.note || "",
+    }));
+    const dRows = docs.map((d) => ({ "Plaque": d.plaque, "Type": d.type, "Date du document": dayFmt(d.date), "Fichier": d.nom, "Ajouté le": fmtDate(d.ajouteLe) }));
+    const hRows = history.map((h) => ({ "Date": fmtDate(h.date), "Action": ACTION[h.action] || h.action, "Plaque": h.plaque, "Véhicule": h.vehicule || "", "Conducteur": h.conducteur || "", "Note": h.note || "" }));
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Documents": "", "Note": "" }]);
+    ws1["!cols"] = [12, 14, 18, 7, 12, 15, 20, 17, 24, 12, 12, 16, 11, 30].map((w) => ({ wch: w }));
+    ws1["!autofilter"] = { ref: ws1["!ref"] };
+    XLSX.utils.book_append_sheet(wb, ws1, "Véhicules");
+    const ws2 = XLSX.utils.json_to_sheet(hRows.length ? hRows : [{ "Date": "", "Action": "", "Plaque": "", "Véhicule": "", "Conducteur": "", "Note": "" }]);
+    ws2["!cols"] = [17, 20, 12, 26, 20, 30].map((w) => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws2, "Historique");
+    const ws3 = XLSX.utils.json_to_sheet(dRows.length ? dRows : [{ "Plaque": "", "Type": "", "Date du document": "", "Fichier": "", "Ajouté le": "" }]);
+    ws3["!cols"] = [12, 20, 16, 34, 17].map((w) => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws3, "Documents");
+    const d = new Date(), pad = (n) => String(n).padStart(2, "0");
+    const filename = `flotte_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.xlsx`;
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+
+    const file = new File([buf], filename, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    if (matchMedia("(pointer: coarse)").matches && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: filename }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    XLSX.writeFile(wb, filename);
+  };
+
+  setInterval(render, 60000); // rafraîchit les durées « depuis … »
+
+  /* ---------- Installation sur le téléphone ---------- */
+  let installEvt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; $("#btnInstall").hidden = false; });
+  $("#btnInstall").onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $("#btnInstall").hidden = true; };
+  window.addEventListener("appinstalled", () => { $("#btnInstall").hidden = true; showToast("Appli installée"); });
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !standalone) $("#iosHint").hidden = false;
+  if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
+
+  init();
+})();
+</script>
+</body>
+</html>
