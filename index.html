@@ -211,6 +211,16 @@ a.btn { text-decoration: none; }
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 600; font-size: 14px; z-index: 50; max-width: calc(100vw - 32px); }
 .foot { font-size: 13px; color: var(--muted); }
 @media (prefers-reduced-motion: no-preference) { .btn, .stat { transition: border-color .15s, box-shadow .15s, filter .15s; } }
+/* Historique véhicule */
+dialog.wider { width: min(860px, calc(100vw - 32px)); }
+.hstats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 560px) { .hstats { grid-template-columns: 1fr 1fr; } }
+.sub-h { margin: 4px 0 -6px; font-family: var(--f-display); font-size: 17px; }
+table.mini th, table.mini td { padding: 7px 10px; font-size: 14px; }
+table.mini td.num, table.mini th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hev { max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.hev table td:first-child { white-space: nowrap; }
+
 /* Rôles */
 body.role-user .admin-only { display: none !important; }
 .who-me { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
@@ -276,7 +286,7 @@ body.role-user .admin-only { display: none !important; }
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="tabV" aria-selected="true" type="button">Véhicules</button>
-    <button class="tab" role="tab" id="tabH" aria-selected="false" type="button">Historique</button>
+    <button class="tab admin-only" role="tab" id="tabH" aria-selected="false" type="button">Historique</button>
     <button class="tab" role="tab" id="tabU" aria-selected="false" type="button" hidden>Utilisateurs</button>
   </div>
 
@@ -316,8 +326,8 @@ body.role-user .admin-only { display: none !important; }
   <section class="panel" id="panelU" hidden>
     <ul class="users" id="users"></ul>
     <div class="rights">
-      <span><strong>Admin</strong> : tout faire (véhicules, maintenance, CT, documents, import et export Excel, utilisateurs).</span>
-      <span><strong>Utilisateur</strong> : voir la flotte, l'historique et les documents, sortir et rendre un véhicule, envoyer des documents (et supprimer les siens).</span>
+      <span><strong>Admin</strong> : tout faire (historique et kilométrages, véhicules, maintenance, CT, documents, import et export Excel, utilisateurs).</span>
+      <span><strong>Utilisateur</strong> : voir la flotte et les documents, sortir et rendre un véhicule, envoyer des documents (et supprimer les siens).</span>
       <span>Pour ajouter une personne : Supabase &gt; Authentication &gt; Users &gt; Add user. Elle apparaît ici avec le rôle Utilisateur.</span>
     </div>
   </section>
@@ -359,9 +369,22 @@ body.role-user .admin-only { display: none !important; }
     <div id="mPlate"></div>
     <div class="field" id="mCondField"><label for="mCond">Qui prend le véhicule ?</label><input id="mCond" placeholder="Nom de la personne" list="conducteurs" autocomplete="off"></div>
     <div class="field"><label for="mNote" id="mNoteLabel">Motif (facultatif)</label><input id="mNote" placeholder="Intervention client, rendez-vous…"></div>
-    <div class="field" id="mKmField"><label for="mKm">Kilométrage au compteur (facultatif)</label><input id="mKm" inputmode="numeric"></div>
+    <div class="field" id="mKmField"><label for="mKm" id="mKmLabel">Kilométrage au compteur (facultatif)</label><input id="mKm" inputmode="numeric" autocomplete="off"><span class="muted" id="mKmHint" style="font-size:13px"></span></div>
     <p class="err" id="mErr"></p>
     <div class="dlg-actions"><button class="btn" type="button" data-close>Annuler</button><button class="btn primary" type="submit" id="mOk">Valider la sortie</button></div>
+  </form>
+</dialog>
+
+<!-- Historique d'un véhicule (admins) -->
+<dialog id="dlgHist" class="wider">
+  <form method="dialog">
+    <div class="dossier-head"><span id="hPlate"></span><h2 id="hTitle">Historique</h2></div>
+    <div class="ct-box hstats" id="hStats"></div>
+    <h3 class="sub-h">Par conducteur</h3>
+    <div class="table-scroll"><table class="mini"><thead><tr><th>Conducteur</th><th class="num">Sorties</th><th class="num">Km parcourus</th></tr></thead><tbody id="hDrivers"></tbody></table></div>
+    <h3 class="sub-h">Événements</h3>
+    <div class="table-scroll hev"><table class="mini"><thead><tr><th>Date</th><th>Événement</th><th>Conducteur</th><th class="num">Compteur</th><th class="num">Parcouru</th><th>Détail</th></tr></thead><tbody id="hEvents"></tbody></table></div>
+    <div class="dlg-actions"><button class="btn" type="button" data-close>Fermer</button></div>
   </form>
 </dialog>
 
@@ -668,6 +691,7 @@ body.role-user .admin-only { display: none !important; }
       else btns = `<button class="btn sm primary admin-only" data-act="fin_maintenance" data-id="${v.id}" type="button">Remettre en service</button>`;
       const nd = docs.filter((d) => d.vehiculeId === v.id).length;
       btns += `<button class="btn sm" data-act="docs" data-id="${v.id}" type="button">Documents${nd ? ` (${nd})` : ""}</button>`;
+      btns += `<button class="btn sm admin-only" data-act="hist" data-id="${v.id}" type="button">Historique</button>`;
       btns += `<button class="btn sm admin-only" data-act="edit" data-id="${v.id}" type="button" aria-label="Modifier ${esc(v.plaque)}">Modifier</button>`;
       const details = [v.annee, kmFmt(v.km)].filter(Boolean).join(" · ");
       let who = '<span class="muted">—</span>';
@@ -688,7 +712,7 @@ body.role-user .admin-only { display: none !important; }
     $("#log").innerHTML = history.slice(0, 300).map((h) => `<li>
       <time datetime="${esc(h.date)}">${esc(fmtDate(h.date))}</time>
       ${plateHTML(h.plaque)}
-      <div class="what"><strong>${esc(ACTION[h.action] || h.action)}</strong> · ${esc(h.vehicule || "")}${h.conducteur ? " · par <strong>" + esc(h.conducteur) + "</strong>" : ""}${h.note ? ' <span class="muted">· ' + esc(h.note) + "</span>" : ""}${h.auteur ? ' <span class="muted">· saisi par ' + esc(h.auteur) + "</span>" : ""}</div>
+      <div class="what"><strong>${esc(ACTION[h.action] || h.action)}</strong> · ${esc(h.vehicule || "")}${h.conducteur ? " · par <strong>" + esc(h.conducteur) + "</strong>" : ""}${h.km != null && h.km !== "" ? " · " + kmFmt(h.km) : ""}${h.distance != null ? " (+" + h.distance.toLocaleString("fr-FR") + " km)" : ""}${h.note ? ' <span class="muted">· ' + esc(h.note) + "</span>" : ""}${h.auteur ? ' <span class="muted">· saisi par ' + esc(h.auteur) + "</span>" : ""}</div>
     </li>`).join("");
     render();
   }
@@ -764,41 +788,97 @@ body.role-user .admin-only { display: none !important; }
 
   /* ---------- Sortie / retour / maintenance ---------- */
   let move = null;
+  const MOVE = {
+    sortie: { title: "Sortie du véhicule", note: "Motif (facultatif)", ph: "Intervention client, rendez-vous…", km: "Kilométrage au départ", ok: "Valider la sortie" },
+    retour: { title: "Retour du véhicule", note: "Remarque (facultatif)", ph: "État du véhicule, carburant, problème constaté…", km: "Kilométrage au retour (obligatoire)", ok: "Valider le retour" },
+    maintenance: { title: "Mise en maintenance", note: "Raison de la maintenance", ph: "Vidange, pneus, contrôle technique…", km: "Kilométrage au compteur (facultatif)", ok: "Mettre en maintenance" },
+  };
+  const kmNum = (x) => (x === "" || x == null || isNaN(+x) ? null : Number(x));
   function openMove(v, kind) {
     move = { v, kind };
-    const isOut = kind === "sortie";
-    $("#mTitle").textContent = isOut ? "Sortie du véhicule" : "Mise en maintenance";
+    const m = MOVE[kind], cur = kmNum(v.km);
+    $("#mTitle").textContent = m.title;
     $("#mPlate").innerHTML = plateHTML(v.plaque) + ` <span class="muted">${esc(v.marque)} ${esc(v.modele)}</span>`;
-    $("#mCondField").hidden = !isOut;
-    $("#mNoteLabel").textContent = isOut ? "Motif (facultatif)" : "Raison de la maintenance";
-    $("#mNote").placeholder = isOut ? "Intervention client, rendez-vous…" : "Vidange, pneus, contrôle technique…";
-    $("#mKmField").hidden = false;
-    $("#mOk").textContent = isOut ? "Valider la sortie" : "Mettre en maintenance";
-    $("#mCond").value = me.role === "user" ? me.nom || me.email || "" : ""; $("#mNote").value = ""; $("#mKm").value = ""; $("#mErr").textContent = "";
-    $("#dlgMove").showModal(); (isOut ? $("#mCond") : $("#mNote")).focus();
+    $("#mCondField").hidden = kind !== "sortie";
+    $("#mNoteLabel").textContent = m.note; $("#mNote").placeholder = m.ph;
+    $("#mKmLabel").textContent = m.km; $("#mOk").textContent = m.ok;
+    $("#mKm").required = kind === "retour";
+    $("#mKm").placeholder = cur != null ? cur.toLocaleString("fr-FR") : "";
+    $("#mKmHint").textContent = kind === "retour"
+      ? (v.conducteur ? `Sorti par ${v.conducteur}. ` : "") + (kmNum(v.kmDepart) != null ? `Compteur au départ : ${kmFmt(v.kmDepart)}.` : cur != null ? `Dernier relevé : ${kmFmt(cur)}.` : "")
+      : cur != null ? `Dernier relevé : ${kmFmt(cur)}.` : "";
+    $("#mCond").value = kind === "sortie" && me.role === "user" ? me.nom || me.email || "" : ""; $("#mNote").value = ""; $("#mKm").value = ""; $("#mErr").textContent = "";
+    $("#dlgMove").showModal(); (kind === "sortie" ? $("#mCond") : kind === "retour" ? $("#mKm") : $("#mNote")).focus();
   }
   $("#fMove").addEventListener("submit", async (e) => {
     e.preventDefault();
     const { v, kind } = move;
-    const cond = $("#mCond").value.trim(), note = $("#mNote").value.trim(), km = $("#mKm").value.replace(/\D/g, "");
+    const cond = $("#mCond").value.trim(), note = $("#mNote").value.trim(), kmTxt = $("#mKm").value.replace(/\D/g, "");
+    const km = kmTxt ? Number(kmTxt) : null, cur = kmNum(v.km);
     if (kind === "sortie" && !cond) { $("#mErr").textContent = "Indiquez qui prend le véhicule."; return; }
-    const now = new Date().toISOString();
-    const patch = { statut: kind, conducteur: kind === "sortie" ? cond : "", depuis: now, motif: note };
-    if (km) patch.km = Number(km);
+    if (kind === "retour" && km == null) { $("#mErr").textContent = "Indiquez le kilométrage affiché au compteur."; $("#mKm").focus(); return; }
+    if (km != null && cur != null && km < cur) { $("#mErr").textContent = `Le kilométrage ne peut pas être inférieur au dernier relevé (${kmFmt(cur)}).`; $("#mKm").focus(); return; }
+    const now = new Date().toISOString(), base = { date: now, action: kind, vehiculeId: v.id, plaque: v.plaque, vehicule: v.marque + " " + v.modele, note };
+    let patch, entry, msg;
+    if (kind === "retour") {
+      const depart = kmNum(v.kmDepart) ?? cur;
+      patch = { statut: "attente", conducteur: "", depuis: now, motif: "", km, kmDepart: null };
+      entry = { ...base, conducteur: v.conducteur || "", km, kmDepart: depart, distance: depart != null ? km - depart : null, sortieLe: v.depuis || "" };
+      msg = `${v.plaque} rendu à ${kmFmt(km)}` + (entry.distance != null ? ` (${entry.distance.toLocaleString("fr-FR")} km parcourus)` : "");
+    } else {
+      const k = km ?? cur;
+      patch = { statut: kind, conducteur: kind === "sortie" ? cond : "", depuis: now, motif: note };
+      if (km != null) patch.km = km;
+      if (kind === "sortie") patch.kmDepart = k;
+      entry = { ...base, conducteur: patch.conducteur, km: k };
+      msg = kind === "sortie" ? `${v.plaque} sorti par ${cond}` : `${v.plaque} en maintenance`;
+    }
     try {
       await store.update(v.id, patch);
-      await store.log({ date: now, action: kind, plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: patch.conducteur, note });
-      $("#dlgMove").close();
-      showToast(kind === "sortie" ? `${v.plaque} sorti par ${cond}` : `${v.plaque} en maintenance`);
+      await store.log(entry);
+      $("#dlgMove").close(); showToast(msg);
     } catch (err) { $("#mErr").textContent = "Enregistrement refusé : " + (err.message || err.code || err); }
   });
   async function backToPark(v, action) {
     const now = new Date().toISOString();
     try {
       await store.update(v.id, { statut: "attente", conducteur: "", depuis: now, motif: "" });
-      await store.log({ date: now, action, plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: v.conducteur || "", note: "" });
-      showToast(action === "retour" ? `${v.plaque} rendu, de nouveau disponible` : `${v.plaque} remis en service`);
+      await store.log({ date: now, action, vehiculeId: v.id, plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: "", km: kmNum(v.km), note: "" });
+      showToast(`${v.plaque} remis en service`);
     } catch (err) { showToast("Enregistrement refusé : " + (err.message || err.code || err)); }
+  }
+
+  /* ---------- Historique d'un véhicule (admins) ---------- */
+  function vehicleEvents(v) {
+    return history.filter((h) => h.vehiculeId ? h.vehiculeId === v.id : plateKey(h.plaque) === plateKey(v.plaque))
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }
+  function openVehicleHistory(v) {
+    const ev = vehicleEvents(v);
+    const trips = ev.filter((h) => h.action === "retour" && h.distance != null);
+    const totalKm = trips.reduce((t, h) => t + h.distance, 0);
+    const byDriver = {};
+    ev.filter((h) => h.action === "sortie").forEach((h) => { const k = h.conducteur || "Non renseigné"; (byDriver[k] = byDriver[k] || { n: 0, km: 0 }).n++; });
+    trips.forEach((h) => { const k = h.conducteur || "Non renseigné"; (byDriver[k] = byDriver[k] || { n: 0, km: 0 }).km += h.distance; });
+    const drivers = Object.entries(byDriver).sort((a, b) => b[1].km - a[1].km || b[1].n - a[1].n);
+    $("#hPlate").innerHTML = plateHTML(v.plaque); $("#hTitle").textContent = `${v.marque} ${v.modele}`;
+    $("#hStats").innerHTML = [
+      ["Compteur actuel", kmNum(v.km) != null ? kmFmt(v.km) : "—"],
+      ["Km parcourus (sorties)", totalKm.toLocaleString("fr-FR") + " km"],
+      ["Sorties", ev.filter((h) => h.action === "sortie").length],
+      ["Conducteurs", drivers.length],
+    ].map(([k, val]) => `<div><div class="k">${k}</div><div class="v">${val}</div></div>`).join("");
+    $("#hDrivers").innerHTML = drivers.length ? drivers.map(([n, d]) => `<tr><td>${esc(n)}</td><td class="num">${d.n}</td><td class="num">${d.km.toLocaleString("fr-FR")} km</td></tr>`).join("")
+      : '<tr><td colspan="3" class="muted">Aucune sortie enregistrée.</td></tr>';
+    $("#hEvents").innerHTML = ev.length ? ev.map((h) => `<tr>
+        <td class="num">${esc(fmtDate(h.date))}</td>
+        <td><strong>${esc(ACTION[h.action] || h.action)}</strong></td>
+        <td>${esc(h.conducteur || "")}</td>
+        <td class="num">${h.km != null && h.km !== "" ? kmFmt(h.km) : ""}</td>
+        <td class="num">${h.distance != null ? "+" + h.distance.toLocaleString("fr-FR") + " km" : ""}</td>
+        <td class="muted">${esc([h.note, h.auteur ? "saisi par " + h.auteur : ""].filter(Boolean).join(" · "))}</td></tr>`).join("")
+      : '<tr><td colspan="6" class="muted">Aucun événement pour ce véhicule.</td></tr>';
+    $("#dlgHist").showModal();
   }
 
   /* ---------- Suppression ---------- */
@@ -913,7 +993,9 @@ body.role-user .admin-only { display: none !important; }
     else if (act === "edit") openVehicle(v);
     else if (act === "docs") openDossier(v);
     else if (act === "sortie" || act === "maintenance") openMove(v, act);
-    else if (act === "retour" || act === "fin_maintenance") backToPark(v, act);
+    else if (act === "retour") openMove(v, "retour");
+    else if (act === "fin_maintenance") backToPark(v, act);
+    else if (act === "hist") openVehicleHistory(v);
   });
 
   async function loadDemo() {
@@ -979,14 +1061,14 @@ body.role-user .admin-only { display: none !important; }
       "Échéance CT": v.prochainCT ? ctInfo(v.prochainCT).rel : "", "Documents": docs.filter((d) => d.vehiculeId === v.id).length, "Note": v.note || "",
     }));
     const dRows = docs.map((d) => ({ "Plaque": d.plaque, "Type": d.type, "Date du document": dayFmt(d.date), "Fichier": d.nom, "Ajouté le": fmtDate(d.ajouteLe) }));
-    const hRows = history.map((h) => ({ "Date": fmtDate(h.date), "Action": ACTION[h.action] || h.action, "Plaque": h.plaque, "Véhicule": h.vehicule || "", "Conducteur": h.conducteur || "", "Note": h.note || "" }));
+    const hRows = history.map((h) => ({ "Date": fmtDate(h.date), "Action": ACTION[h.action] || h.action, "Plaque": h.plaque, "Véhicule": h.vehicule || "", "Conducteur": h.conducteur || "", "Compteur (km)": h.km ?? "", "Km parcourus": h.distance ?? "", "Saisi par": h.auteur || "", "Note": h.note || "" }));
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Documents": "", "Note": "" }]);
     ws1["!cols"] = [12, 14, 18, 7, 12, 15, 20, 17, 24, 12, 12, 16, 11, 30].map((w) => ({ wch: w }));
     ws1["!autofilter"] = { ref: ws1["!ref"] };
     XLSX.utils.book_append_sheet(wb, ws1, "Véhicules");
-    const ws2 = XLSX.utils.json_to_sheet(hRows.length ? hRows : [{ "Date": "", "Action": "", "Plaque": "", "Véhicule": "", "Conducteur": "", "Note": "" }]);
-    ws2["!cols"] = [17, 20, 12, 26, 20, 30].map((w) => ({ wch: w }));
+    const ws2 = XLSX.utils.json_to_sheet(hRows.length ? hRows : [{ "Date": "", "Action": "", "Plaque": "", "Véhicule": "", "Conducteur": "", "Compteur (km)": "", "Km parcourus": "", "Saisi par": "", "Note": "" }]);
+    ws2["!cols"] = [17, 20, 12, 26, 20, 14, 13, 20, 30].map((w) => ({ wch: w }));
     XLSX.utils.book_append_sheet(wb, ws2, "Historique");
     const ws3 = XLSX.utils.json_to_sheet(dRows.length ? dRows : [{ "Plaque": "", "Type": "", "Date du document": "", "Fichier": "", "Ajouté le": "" }]);
     ws3["!cols"] = [12, 20, 16, 34, 17].map((w) => ({ wch: w }));

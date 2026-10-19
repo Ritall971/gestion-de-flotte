@@ -66,7 +66,7 @@ drop trigger if exists proteger_role on public.profils;
 create trigger proteger_role before update on public.profils for each row execute function public.proteger_role();
 
 -- ============ Droits ============
--- admin : tout. user : voir la flotte, l'historique et les documents, sortir et rendre un véhicule,
+-- admin : tout. user : voir la flotte et les documents, sortir et rendre un véhicule (kilométrage obligatoire),
 -- envoyer des documents (et supprimer ceux qu'il a envoyés), mettre à jour les dates de CT.
 alter table public.vehicules enable row level security;
 alter table public.historique enable row level security;
@@ -90,7 +90,8 @@ drop policy if exists "admin modifie" on public.profils;
 
 create policy "lecture" on public.vehicules for select to authenticated using (true);
 create policy "admin ecrit" on public.vehicules for all to authenticated using (public.is_admin()) with check (public.is_admin());
-create policy "lecture" on public.historique for select to authenticated using (true);
+-- L'historique (kilométrages, conducteurs) n'est visible que des admins ; tout le monde peut y ajouter ses actions.
+create policy "lecture" on public.historique for select to authenticated using (public.is_admin());
 create policy "ajout" on public.historique for insert to authenticated with check (true);
 create policy "lecture" on public.documents for select to authenticated using (true);
 create policy "ajout" on public.documents for insert to authenticated
@@ -107,6 +108,7 @@ create or replace function public.merge_vehicule(p_id text, p_patch jsonb)
 returns void language plpgsql security definer set search_path = public as $$
 declare
   statut_actuel text;
+  km_actuel numeric;
 begin
   if auth.uid() is null then raise exception 'Connexion requise.'; end if;
   if not public.is_admin() and not exists (
@@ -114,10 +116,16 @@ begin
   ) then
     null; -- mise à jour des dates de CT : autorisée
   elsif not public.is_admin() then
-    if exists (select 1 from jsonb_object_keys(p_patch) k where k not in ('statut', 'conducteur', 'depuis', 'motif', 'km')) then
+    if exists (select 1 from jsonb_object_keys(p_patch) k where k not in ('statut', 'conducteur', 'depuis', 'motif', 'km', 'kmDepart')) then
       raise exception 'Seul un administrateur peut modifier la fiche d''un véhicule.';
     end if;
-    select data->>'statut' into statut_actuel from public.vehicules where id = p_id;
+    select data->>'statut', nullif(data->>'km', '')::numeric into statut_actuel, km_actuel from public.vehicules where id = p_id;
+    if p_patch->>'statut' = 'attente' and nullif(p_patch->>'km', '') is null then
+      raise exception 'Le kilométrage est obligatoire pour rendre un véhicule.';
+    end if;
+    if nullif(p_patch->>'km', '') is not null and (p_patch->>'km')::numeric < coalesce(km_actuel, 0) then
+      raise exception 'Le kilométrage ne peut pas être inférieur au dernier relevé.';
+    end if;
     if coalesce(p_patch->>'statut', '') not in ('sortie', 'attente') or statut_actuel = 'maintenance' then
       raise exception 'Seul un administrateur peut gérer la maintenance.';
     end if;

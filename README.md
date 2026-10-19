@@ -39,8 +39,9 @@ Les véhicules et les dates de CT sont repris. Les documents sont à rajouter, e
 
 | Action | Admin | Utilisateur |
 |---|---|---|
-| Voir la flotte, l'historique et les documents | Oui | Oui |
-| Sortir et rendre un véhicule | Oui | Oui |
+| Voir la flotte et les documents | Oui | Oui |
+| Voir l'historique (kilométrages, conducteurs, événements) | Oui | Non |
+| Sortir et rendre un véhicule (kilométrage obligatoire au retour) | Oui | Oui |
 | Ajouter, modifier ou supprimer un véhicule | Oui | Non |
 | Gérer la maintenance | Oui | Non |
 | Mettre à jour les dates de CT | Oui | Oui (en envoyant le PV) |
