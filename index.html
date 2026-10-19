@@ -277,7 +277,7 @@ body.role-user .admin-only { display: none !important; }
 
   <section class="stats" aria-label="Filtrer par statut">
     <button class="stat" data-f="tous" aria-pressed="true" type="button"><span class="l">Toute la flotte</span><span class="n" id="nTous">0</span></button>
-    <button class="stat attente" data-f="attente" aria-pressed="false" type="button"><span class="dot"></span><span class="l">En attente</span><span class="n" id="nAttente">0</span></button>
+    <button class="stat attente" data-f="attente" aria-pressed="false" type="button"><span class="dot"></span><span class="l">Disponible</span><span class="n" id="nAttente">0</span></button>
     <button class="stat sortie" data-f="sortie" aria-pressed="false" type="button"><span class="dot"></span><span class="l">Sortis</span><span class="n" id="nSortie">0</span></button>
     <button class="stat maintenance" data-f="maintenance" aria-pressed="false" type="button"><span class="dot"></span><span class="l">En maintenance</span><span class="n" id="nMaint">0</span></button>
   </section>
@@ -363,7 +363,7 @@ body.role-user .admin-only { display: none !important; }
     </div>
     <div class="field"><label for="vPollu">Dernier contrôle anti-pollution (facultatif)</label><input id="vPollu" type="date"></div>
     <div class="field"><label for="vStatut">Statut</label>
-      <select id="vStatut"><option value="attente">En attente</option><option value="sortie">Sorti</option><option value="maintenance">En maintenance</option></select></div>
+      <select id="vStatut"><option value="attente">Disponible</option><option value="sortie">Sorti</option><option value="maintenance">En maintenance</option></select></div>
     <div class="field" id="vCondField"><label for="vCond">Conducteur</label><input id="vCond" placeholder="Nom de la personne" list="conducteurs"></div>
     <div class="field"><label for="vNote">Note</label><textarea id="vNote" placeholder="Carte carburant, emplacement, remarque…"></textarea></div>
     <p class="err" id="vErr"></p>
@@ -443,7 +443,7 @@ body.role-user .admin-only { display: none !important; }
 <script>
 (() => {
   const $ = (s) => document.querySelector(s);
-  const LABEL = { attente: "En attente", sortie: "Sorti", maintenance: "En maintenance" };
+  const LABEL = { attente: "Disponible", sortie: "Sorti", maintenance: "En maintenance" };
   const ACTION = { sortie: "Sortie", retour: "Retour", maintenance: "Mise en maintenance", fin_maintenance: "Fin de maintenance", ajout: "Ajout", modif: "Modification", suppression: "Suppression", document: "Document ajouté", document_suppr: "Document supprimé" };
 
   let vehicles = [];   // {id, plaque, marque, modele, annee, km, statut, conducteur, depuis, motif, note, dernierCT, prochainCT}
