@@ -317,7 +317,7 @@ body.role-user .admin-only { display: none !important; }
     <ul class="users" id="users"></ul>
     <div class="rights">
       <span><strong>Admin</strong> : tout faire (véhicules, maintenance, CT, documents, import et export Excel, utilisateurs).</span>
-      <span><strong>Utilisateur</strong> : voir la flotte, l'historique et les documents, sortir et rendre un véhicule.</span>
+      <span><strong>Utilisateur</strong> : voir la flotte, l'historique et les documents, sortir et rendre un véhicule, envoyer des documents (et supprimer les siens).</span>
       <span>Pour ajouter une personne : Supabase &gt; Authentication &gt; Users &gt; Add user. Elle apparaît ici avec le rôle Utilisateur.</span>
     </div>
   </section>
@@ -524,7 +524,6 @@ body.role-user .admin-only { display: none !important; }
   const isAdmin = () => me.role === "admin";
   function applyRole() {
     document.body.classList.toggle("role-user", !isAdmin());
-    store.canUpload = store.canUpload && isAdmin();
     $("#tabU").hidden = !(isAdmin() && store.listProfils);
     $("#emptyUser").hidden = isAdmin();
     if (me.email) {
@@ -852,7 +851,7 @@ body.role-user .admin-only { display: none !important; }
         : `<button class="btn sm" type="button" data-doc-ask="${d.id}" aria-label="Supprimer ${esc(d.nom)}">Supprimer</button>`;
       return `<li><span class="thumb">${thumb}</span>
         <span class="meta"><strong title="${esc(d.nom)}">${esc(d.type)}${d.date ? " du " + dayFmt(d.date) : ""}</strong><span>${esc(d.nom)}${d.taille ? " · " + (d.taille < 1048576 ? Math.max(1, Math.round(d.taille / 1024)) + " Ko" : (d.taille / 1048576).toFixed(1).replace(".", ",") + " Mo") : ""}</span></span>
-        <span class="ops"><button class="btn sm" type="button" data-doc-open="${d.id}">Ouvrir</button>${store.canUpload ? del : ""}</span></li>`;
+        <span class="ops"><button class="btn sm" type="button" data-doc-open="${d.id}">Ouvrir</button>${store.canUpload && (isAdmin() || d.ajoutePar === me.id) ? del : ""}</span></li>`;
     }).join("") : '<li class="empty-li">Aucun document pour ce véhicule.</li>';
   }
   function syncDocType() {
@@ -871,7 +870,7 @@ body.role-user .admin-only { display: none !important; }
     try {
       const up = await store.upload(file);
       const type = $("#dType").value, date = $("#dDate").value, now = new Date().toISOString();
-      await store.addDoc({ vehiculeId: v.id, plaque: v.plaque, type, nom: file.name, date, contentType: file.type || "", taille: file.size, ajouteLe: now, ...up });
+      await store.addDoc({ vehiculeId: v.id, plaque: v.plaque, type, nom: file.name, date, contentType: file.type || "", taille: file.size, ajouteLe: now, ajoutePar: me.id || "", ...up });
       if (type === "Contrôle technique" && $("#dSetCT").checked && date) {
         await store.update(v.id, { dernierCT: date, prochainCT: $("#dNextCT").value || plusYears(date, 2) });
       }

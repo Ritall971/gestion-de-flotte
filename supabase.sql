@@ -66,7 +66,8 @@ drop trigger if exists proteger_role on public.profils;
 create trigger proteger_role before update on public.profils for each row execute function public.proteger_role();
 
 -- ============ Droits ============
--- admin : tout. user : voir la flotte, l'historique et les documents, sortir et rendre un véhicule.
+-- admin : tout. user : voir la flotte, l'historique et les documents, sortir et rendre un véhicule,
+-- envoyer des documents (et supprimer ceux qu'il a envoyés), mettre à jour les dates de CT.
 alter table public.vehicules enable row level security;
 alter table public.historique enable row level security;
 alter table public.documents enable row level security;
@@ -81,6 +82,9 @@ drop policy if exists "lecture" on public.historique;
 drop policy if exists "ajout" on public.historique;
 drop policy if exists "lecture" on public.documents;
 drop policy if exists "admin ecrit" on public.documents;
+drop policy if exists "ajout" on public.documents;
+drop policy if exists "suppression" on public.documents;
+drop policy if exists "admin modifie" on public.documents;
 drop policy if exists "lecture" on public.profils;
 drop policy if exists "admin modifie" on public.profils;
 
@@ -89,18 +93,27 @@ create policy "admin ecrit" on public.vehicules for all to authenticated using (
 create policy "lecture" on public.historique for select to authenticated using (true);
 create policy "ajout" on public.historique for insert to authenticated with check (true);
 create policy "lecture" on public.documents for select to authenticated using (true);
-create policy "admin ecrit" on public.documents for all to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "ajout" on public.documents for insert to authenticated
+  with check (public.is_admin() or data->>'ajoutePar' = auth.uid()::text);
+create policy "suppression" on public.documents for delete to authenticated
+  using (public.is_admin() or data->>'ajoutePar' = auth.uid()::text);
+create policy "admin modifie" on public.documents for update to authenticated using (public.is_admin()) with check (public.is_admin());
 create policy "lecture" on public.profils for select to authenticated using (user_id = auth.uid() or public.is_admin());
 create policy "admin modifie" on public.profils for update to authenticated using (public.is_admin()) with check (public.is_admin());
 
--- Mise à jour d'un véhicule. Un admin peut tout changer ; un user peut seulement sortir ou rendre un véhicule.
+-- Mise à jour d'un véhicule. Un admin peut tout changer ; un user peut sortir ou rendre un véhicule,
+-- ou mettre à jour les dates de CT (quand il envoie le PV du contrôle technique).
 create or replace function public.merge_vehicule(p_id text, p_patch jsonb)
 returns void language plpgsql security definer set search_path = public as $$
 declare
   statut_actuel text;
 begin
   if auth.uid() is null then raise exception 'Connexion requise.'; end if;
-  if not public.is_admin() then
+  if not public.is_admin() and not exists (
+    select 1 from jsonb_object_keys(p_patch) k where k not in ('dernierCT', 'prochainCT')
+  ) then
+    null; -- mise à jour des dates de CT : autorisée
+  elsif not public.is_admin() then
     if exists (select 1 from jsonb_object_keys(p_patch) k where k not in ('statut', 'conducteur', 'depuis', 'motif', 'km')) then
       raise exception 'Seul un administrateur peut modifier la fiche d''un véhicule.';
     end if;
@@ -123,9 +136,11 @@ drop policy if exists "equipe ajoute documents" on storage.objects;
 drop policy if exists "equipe supprime documents" on storage.objects;
 drop policy if exists "admin ajoute documents" on storage.objects;
 drop policy if exists "admin supprime documents" on storage.objects;
+drop policy if exists "equipe supprime ses documents" on storage.objects;
 create policy "equipe lit documents" on storage.objects for select to authenticated using (bucket_id = 'documents');
-create policy "admin ajoute documents" on storage.objects for insert to authenticated with check (bucket_id = 'documents' and public.is_admin());
-create policy "admin supprime documents" on storage.objects for delete to authenticated using (bucket_id = 'documents' and public.is_admin());
+create policy "equipe ajoute documents" on storage.objects for insert to authenticated with check (bucket_id = 'documents');
+create policy "equipe supprime ses documents" on storage.objects for delete to authenticated
+  using (bucket_id = 'documents' and (public.is_admin() or owner_id = auth.uid()::text));
 
 -- ============ Mise à jour en direct entre le PC et le téléphone ============
 do $$

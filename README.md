@@ -42,8 +42,10 @@ Les véhicules et les dates de CT sont repris. Les documents sont à rajouter, e
 | Voir la flotte, l'historique et les documents | Oui | Oui |
 | Sortir et rendre un véhicule | Oui | Oui |
 | Ajouter, modifier ou supprimer un véhicule | Oui | Non |
-| Gérer la maintenance et les dates de CT | Oui | Non |
-| Ajouter ou supprimer des documents | Oui | Non |
+| Gérer la maintenance | Oui | Non |
+| Mettre à jour les dates de CT | Oui | Oui (en envoyant le PV) |
+| Envoyer des documents (PV de CT, photos…) | Oui | Oui |
+| Supprimer un document | Oui | Seulement les siens |
 | Importer et exporter vers Excel | Oui | Non |
 | Changer le rôle des utilisateurs | Oui | Non |
 
