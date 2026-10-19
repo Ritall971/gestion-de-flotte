@@ -54,6 +54,14 @@ Les droits sont vérifiés par la base de données elle-même, pas seulement par
 Chaque compte créé dans **Authentication > Users** reçoit le rôle Utilisateur. Un admin le passe en Admin depuis l'onglet **Utilisateurs** de l'appli.
 Le premier compte créé dans le projet devient automatiquement Admin.
 
+## Restitution d'un véhicule
+
+Dans **Documents**, un admin peut ajouter un **PV de restitution** et indiquer la date de la restitution. À cette date, le véhicule passe automatiquement en **Restitué** : la base vérifie chaque heure et l'appli à chaque ouverture.
+- Un véhicule restitué disparaît de la flotte active. Il reste visible avec le compteur « Restitués ».
+- Il ne peut plus être sorti, et il ne déclenche plus d'alerte de CT ni de fin de location.
+- La restitution est inscrite dans l'historique.
+- Pour le remettre en service, ouvrez **Modifier** et choisissez un autre statut : la date de restitution est alors effacée.
+
 ## Notifications sur le téléphone des admins
 
 Chaque matin vers 7 h ou 8 h, les admins reçoivent une notification s'il y a :

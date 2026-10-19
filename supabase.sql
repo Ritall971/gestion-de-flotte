@@ -126,6 +126,9 @@ begin
     if nullif(p_patch->>'km', '') is not null and (p_patch->>'km')::numeric < coalesce(km_actuel, 0) then
       raise exception 'Le kilométrage ne peut pas être inférieur au dernier relevé.';
     end if;
+    if statut_actuel = 'restitue' then
+      raise exception 'Ce véhicule a été restitué.';
+    end if;
     if coalesce(p_patch->>'statut', '') not in ('sortie', 'attente') or statut_actuel = 'maintenance' then
       raise exception 'Seul un administrateur peut gérer la maintenance.';
     end if;
@@ -133,6 +136,34 @@ begin
   update public.vehicules set data = data || p_patch, updated_at = now() where id = p_id;
 end $$;
 grant execute on function public.merge_vehicule(text, jsonb) to authenticated;
+
+-- Restitution : à la date du PV de restitution, le véhicule passe en "Restitué" (appelé par l'appli et chaque heure par la base).
+create or replace function public.appliquer_restitutions()
+returns integer language plpgsql security definer set search_path = public as $$
+declare
+  v record;
+  n integer := 0;
+  maintenant text := to_char(now() at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+begin
+  for v in
+    select id, data from public.vehicules
+    where nullif(data->>'dateRestitution', '') is not null
+      and (data->>'dateRestitution')::date <= (now() at time zone 'Europe/Paris')::date
+      and coalesce(data->>'statut', '') <> 'restitue'
+    for update
+  loop
+    update public.vehicules
+      set data = data || jsonb_build_object('statut', 'restitue', 'depuis', maintenant, 'conducteur', '', 'motif', ''), updated_at = now()
+      where id = v.id;
+    insert into public.historique (id, date, data) values (gen_random_uuid()::text, now(), jsonb_build_object(
+      'date', maintenant, 'action', 'restitution', 'plaque', v.data->>'plaque',
+      'vehicule', concat_ws(' ', v.data->>'marque', v.data->>'modele'), 'conducteur', '',
+      'note', 'Restitution du ' || to_char((v.data->>'dateRestitution')::date, 'DD/MM/YYYY'), 'auteur', 'Automatique'));
+    n := n + 1;
+  end loop;
+  return n;
+end $$;
+grant execute on function public.appliquer_restitutions() to authenticated;
 
 -- ============ Documents (PV de CT, carte grise, etc.) ============
 insert into storage.buckets (id, name, public, file_size_limit)
@@ -185,6 +216,7 @@ insert into public.notif_prive (cle, valeur)
 -- Vérification chaque matin (6 h UTC, soit 7 h ou 8 h en France) : CT, fins de location, véhicules non rendus.
 create extension if not exists pg_net;
 create extension if not exists pg_cron;
+select cron.schedule('flotte-restitutions', '5 * * * *', 'select public.appliquer_restitutions()');
 select cron.schedule('flotte-alertes', '0 6 * * *', $cron$
   select net.http_post(
     url := p.url,

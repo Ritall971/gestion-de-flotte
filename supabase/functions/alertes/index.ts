@@ -134,6 +134,7 @@ export function calculerAlertes(vehicules: any[], maintenant = new Date()) {
   };
   for (const row of vehicules) {
     const v = row.data || {}, nom = v.plaque || `${v.marque || ""} ${v.modele || ""}`.trim();
+    if (v.statut === "restitue") continue; // véhicule rendu : plus d'alerte
     if (v.prochainCT) echeance(row.id, "ct", v.prochainCT, "contrôle technique", "contrôle technique dépassé", nom);
     if (v.acquisition === "location" && v.locFin) echeance(row.id, "loc", v.locFin, "fin de location", "location terminée", nom);
     if (v.statut === "sortie" && v.depuis) {

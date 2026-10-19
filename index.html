@@ -97,7 +97,9 @@ header.top .sub { font-size: 14px; color: var(--muted); margin-top: 2px; }
 .stat.attente .n { color: var(--ok); } .stat.attente .dot { background: var(--ok); }
 .stat.sortie .n { color: var(--out); } .stat.sortie .dot { background: var(--out); }
 .stat.maintenance .n { color: var(--maint); } .stat.maintenance .dot { background: var(--maint); }
-@media (max-width: 640px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stat.restitue .n { color: var(--muted); } .stat.restitue .dot { background: var(--muted); }
+.stats.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 640px) { .stats, .stats.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stats.five .stat.restitue { grid-column: 1 / -1; } }
 
 /* Onglets */
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
@@ -135,6 +137,7 @@ td.row-actions .actions { justify-content: flex-end; flex-wrap: nowrap; }
 .pill.attente { color: var(--ok); background: var(--ok-bg); }
 .pill.sortie { color: var(--out); background: var(--out-bg); }
 .pill.maintenance { color: var(--maint); background: var(--maint-bg); }
+.pill.restitue { color: var(--muted); background: var(--surface-2); }
 
 .empty { padding: 40px 20px; text-align: center; display: grid; gap: 10px; justify-items: center; }
 .empty h2 { font-size: 22px; }
@@ -284,6 +287,7 @@ body.role-user .admin-only { display: none !important; }
     <button class="stat attente" data-f="attente" aria-pressed="false" type="button"><span class="dot"></span><span class="l">Disponible</span><span class="n" id="nAttente">0</span></button>
     <button class="stat sortie" data-f="sortie" aria-pressed="false" type="button"><span class="dot"></span><span class="l">Sortis</span><span class="n" id="nSortie">0</span></button>
     <button class="stat maintenance" data-f="maintenance" aria-pressed="false" type="button"><span class="dot"></span><span class="l">En maintenance</span><span class="n" id="nMaint">0</span></button>
+    <button class="stat restitue" data-f="restitue" aria-pressed="false" type="button" hidden><span class="dot"></span><span class="l">Restitués</span><span class="n" id="nRest">0</span></button>
   </section>
 
   <div class="alert" id="ctAlert" hidden></div>
@@ -377,7 +381,8 @@ body.role-user .admin-only { display: none !important; }
     </div>
     <div class="field"><label for="vPollu">Dernier contrôle anti-pollution (facultatif)</label><input id="vPollu" type="date"></div>
     <div class="field"><label for="vStatut">Statut</label>
-      <select id="vStatut"><option value="attente">Disponible</option><option value="sortie">Sorti</option><option value="maintenance">En maintenance</option></select></div>
+      <select id="vStatut"><option value="attente">Disponible</option><option value="sortie">Sorti</option><option value="maintenance">En maintenance</option><option value="restitue">Restitué</option></select></div>
+    <div class="field"><label for="vRest">Date de restitution (facultatif)</label><input id="vRest" type="date"></div>
     <div class="field" id="vCondField"><label for="vCond">Conducteur</label><input id="vCond" placeholder="Nom de la personne" list="conducteurs"></div>
     <div class="field"><label for="vNote">Note</label><textarea id="vNote" placeholder="Carte carburant, emplacement, remarque…"></textarea></div>
     <p class="err" id="vErr"></p>
@@ -425,7 +430,7 @@ body.role-user .admin-only { display: none !important; }
       <h3>Ajouter un document</h3>
       <div class="grid2">
         <div class="field"><label for="dType">Type</label>
-          <select id="dType"><option>Contrôle technique</option><option>Contre-visite</option><option>Carte grise</option><option>Assurance</option><option>Facture d'entretien</option><option>Devis</option><option>Autre</option></select></div>
+          <select id="dType"><option>Contrôle technique</option><option>Contre-visite</option><option>Carte grise</option><option>Assurance</option><option>Facture d'entretien</option><option>Devis</option><option id="dTypeRest">PV de restitution</option><option>Autre</option></select></div>
         <div class="field"><label for="dDate">Date du document</label><input id="dDate" type="date"></div>
       </div>
       <div class="field"><label for="dFile">Fichier (PDF ou photo, 20 Mo maximum)</label><input id="dFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></div>
@@ -433,6 +438,7 @@ body.role-user .admin-only { display: none !important; }
         <label class="check"><input type="checkbox" id="dSetCT" checked> Enregistrer comme dernier CT et fixer le prochain au</label>
         <div class="field" style="margin-top:6px"><input id="dNextCT" type="date" aria-label="Date du prochain contrôle technique"></div>
       </div>
+      <p class="muted" id="dRestHint" hidden></p>
       <p class="err" id="dErr"></p>
       <div class="dlg-actions"><button class="btn primary" type="button" id="dSend">Ajouter le document</button></div>
     </div>
@@ -457,8 +463,8 @@ body.role-user .admin-only { display: none !important; }
 <script>
 (() => {
   const $ = (s) => document.querySelector(s);
-  const LABEL = { attente: "Disponible", sortie: "Sorti", maintenance: "En maintenance" };
-  const ACTION = { sortie: "Sortie", retour: "Retour", maintenance: "Mise en maintenance", fin_maintenance: "Fin de maintenance", ajout: "Ajout", modif: "Modification", suppression: "Suppression", document: "Document ajouté", document_suppr: "Document supprimé" };
+  const LABEL = { attente: "Disponible", sortie: "Sorti", maintenance: "En maintenance", restitue: "Restitué" };
+  const ACTION = { sortie: "Sortie", retour: "Retour", maintenance: "Mise en maintenance", fin_maintenance: "Fin de maintenance", ajout: "Ajout", modif: "Modification", suppression: "Suppression", restitution: "Restitution", document: "Document ajouté", document_suppr: "Document supprimé" };
 
   let vehicles = [];   // {id, plaque, marque, modele, annee, km, statut, conducteur, depuis, motif, note, dernierCT, prochainCT}
   let history = [];    // {id, date, action, plaque, vehicule, conducteur, note}
@@ -563,6 +569,10 @@ body.role-user .admin-only { display: none !important; }
         await sb.storage.from("documents").remove([d.path]); await pull("d");
       },
       url(d) { return d._url || ""; },
+      async applyRestitutions() {
+        const { data, error } = await sb.rpc("appliquer_restitutions"); if (error) fail(error);
+        if (data) await Promise.all([pull("v"), pull("h")]);
+      },
       push: {
         async call(action) {
           const { data, error } = await sb.functions.invoke("alertes", { body: { action } });
@@ -707,7 +717,19 @@ body.role-user .admin-only { display: none !important; }
     store.onVehicles((list) => { vehicles = list; render(); if (dossierId && $("#dlgDocs").open) renderDossier(); });
     store.onDocs((list) => { docs = list.sort((a, b) => (b.date || b.ajouteLe || "").localeCompare(a.date || a.ajouteLe || "")); render(); if (dossierId && $("#dlgDocs").open) renderDossier(); });
     store.onHistory((list) => { history = list.sort((a, b) => (b.date || "").localeCompare(a.date || "")); renderLog(); });
-    if (store.start) store.start();
+    if (store.start) await store.start();
+    applyRestitutions();
+  }
+  // Passe en « Restitué » les véhicules dont la date de restitution est arrivée.
+  async function applyRestitutions() {
+    try {
+      if (store.applyRestitutions) return await store.applyRestitutions();
+      const today = isoDay(new Date()), now = new Date().toISOString();
+      for (const v of vehicles.filter((x) => x.dateRestitution && x.dateRestitution <= today && x.statut !== "restitue")) {
+        await store.update(v.id, { statut: "restitue", depuis: now, conducteur: "", motif: "" });
+        await store.log({ date: now, action: "restitution", plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: "", note: "Restitution du " + dayFmt(v.dateRestitution) });
+      }
+    } catch (e) { /* réessayé au prochain lancement ; la base le fait aussi chaque heure */ }
   }
 
   /* ---------- Utilitaires ---------- */
@@ -764,12 +786,15 @@ body.role-user .admin-only { display: none !important; }
 
   /* ---------- Rendu ---------- */
   function render() {
-    const c = { attente: 0, sortie: 0, maintenance: 0 };
+    const c = { attente: 0, sortie: 0, maintenance: 0, restitue: 0 };
     vehicles.forEach((v) => { c[v.statut] = (c[v.statut] || 0) + 1; });
-    $("#nTous").textContent = vehicles.length;
-    $("#nAttente").textContent = c.attente; $("#nSortie").textContent = c.sortie; $("#nMaint").textContent = c.maintenance;
+    const actifs = vehicles.filter((v) => v.statut !== "restitue");
+    $("#nTous").textContent = actifs.length;
+    $("#nAttente").textContent = c.attente; $("#nSortie").textContent = c.sortie; $("#nMaint").textContent = c.maintenance; $("#nRest").textContent = c.restitue;
+    $(".stat.restitue").hidden = !c.restitue; $(".stats").classList.toggle("five", c.restitue > 0);
+    if (!c.restitue && filter === "restitue") filter = "tous";
     $("#sub").textContent = vehicles.length
-      ? `${vehicles.length} véhicule${vehicles.length > 1 ? "s" : ""} · ${c.attente} disponible${c.attente > 1 ? "s" : ""}`
+      ? `${actifs.length} véhicule${actifs.length > 1 ? "s" : ""} · ${c.attente} disponible${c.attente > 1 ? "s" : ""}${c.restitue ? ` · ${c.restitue} restitué${c.restitue > 1 ? "s" : ""}` : ""}`
       : "Aucun véhicule pour l'instant";
 
     const marques = [...new Set(vehicles.map((v) => v.marque).filter(Boolean))].sort();
@@ -779,12 +804,12 @@ body.role-user .admin-only { display: none !important; }
 
     const q = norm(query);
     const list = vehicles
-      .filter((v) => filter === "tous" || v.statut === filter || (filter === "ct" && v.prochainCT && ctInfo(v.prochainCT).days <= CT_SOON))
+      .filter((v) => filter === "tous" ? v.statut !== "restitue" : v.statut === filter || (filter === "ct" && v.statut !== "restitue" && v.prochainCT && ctInfo(v.prochainCT).days <= CT_SOON))
       .filter((v) => !q || norm([v.plaque, plateKey(v.plaque), v.marque, v.modele, v.conducteur, v.motif, v.note].join(" ")).includes(q))
       .sort((a, b) => norm(a[sortKey]).localeCompare(norm(b[sortKey]), "fr", { numeric: true }) * sortDir);
 
-    const late = vehicles.filter((v) => v.prochainCT && ctInfo(v.prochainCT).days <= 0).length;
-    const soon = vehicles.filter((v) => v.prochainCT && ctInfo(v.prochainCT).days > 0 && ctInfo(v.prochainCT).days <= CT_SOON).length;
+    const late = actifs.filter((v) => v.prochainCT && ctInfo(v.prochainCT).days <= 0).length;
+    const soon = actifs.filter((v) => v.prochainCT && ctInfo(v.prochainCT).days > 0 && ctInfo(v.prochainCT).days <= CT_SOON).length;
     const al = $("#ctAlert");
     al.hidden = !(late || soon);
     al.className = "alert" + (late ? " late" : "");
@@ -803,21 +828,23 @@ body.role-user .admin-only { display: none !important; }
       let btns = "";
       if (v.statut === "attente") btns = `<button class="btn sm primary" data-act="sortie" data-id="${v.id}" type="button">Sortir</button><button class="btn sm admin-only" data-act="maintenance" data-id="${v.id}" type="button">Maintenance</button>`;
       else if (v.statut === "sortie") btns = `<button class="btn sm primary" data-act="retour" data-id="${v.id}" type="button">Retour</button>`;
-      else btns = `<button class="btn sm primary admin-only" data-act="fin_maintenance" data-id="${v.id}" type="button">Remettre en service</button>`;
+      else if (v.statut === "maintenance") btns = `<button class="btn sm primary admin-only" data-act="fin_maintenance" data-id="${v.id}" type="button">Remettre en service</button>`;
       const nd = docs.filter((d) => d.vehiculeId === v.id).length;
       btns += `<button class="btn sm" data-act="docs" data-id="${v.id}" type="button">Documents${nd ? ` (${nd})` : ""}</button>`;
       btns += `<button class="btn sm admin-only" data-act="hist" data-id="${v.id}" type="button">Historique</button>`;
       btns += `<button class="btn sm admin-only" data-act="edit" data-id="${v.id}" type="button" aria-label="Modifier ${esc(v.plaque)}">Modifier</button>`;
-      const details = [v.annee, kmFmt(v.km), v.energie, locLabel(v)].filter(Boolean).join(" · ");
+      const details = [v.annee, kmFmt(v.km), v.energie, locLabel(v),
+        v.statut !== "restitue" && v.dateRestitution ? "Restitution prévue le " + dayFmt(v.dateRestitution) : ""].filter(Boolean).join(" · ");
       let who = '<span class="muted">—</span>';
       if (v.statut === "sortie") who = `<strong>${esc(v.conducteur || "Non renseigné")}</strong><span class="since" title="${esc(fmtDate(v.depuis))}">${since(v.depuis)}${v.motif ? " · " + esc(v.motif) : ""}</span>`;
+      else if (v.statut === "restitue") who = `<span class="since">${v.dateRestitution ? "Restitué le " + dayFmt(v.dateRestitution) : since(v.depuis)}</span>`;
       else if (v.statut === "maintenance") who = `<span class="since" title="${esc(fmtDate(v.depuis))}">${v.motif ? esc(v.motif) + " · " : ""}${since(v.depuis)}</span>`;
       return `<tr>
         <td>${plateHTML(v.plaque)}</td>
         <td class="model">${esc(v.marque)} ${esc(v.modele)}${details ? `<small>${esc(details)}</small>` : ""}</td>
         <td class="st"><span class="pill ${v.statut}">${LABEL[v.statut] || v.statut}</span></td>
         <td class="who">${who}</td>
-        <td class="ctc">${ctHTML(v.prochainCT)}</td>
+        <td class="ctc">${v.statut === "restitue" ? '<span class="ct none">—</span>' : ctHTML(v.prochainCT)}</td>
         <td class="row-actions"><div class="actions">${btns}</div></td></tr>`;
     }).join("");
   }
@@ -864,6 +891,7 @@ body.role-user .admin-only { display: none !important; }
     $("#vAnnee").value = v ? v.annee || "" : ""; $("#vKm").value = v ? v.km || "" : "";
     $("#vDernierCT").value = v ? v.dernierCT || "" : ""; $("#vProchainCT").value = v ? v.prochainCT || "" : "";
     $("#vStatut").value = v ? v.statut : "attente"; $("#vCond").value = v ? v.conducteur || "" : ""; $("#vNote").value = v ? v.note || "" : "";
+    $("#vRest").value = v ? v.dateRestitution || "" : "";
     $("#vEnergie").value = v ? v.energie || "" : ""; $("#vPollu").value = v ? v.dernierPollution || "" : "";
     $("#vAcq").value = v && v.acquisition === "location" ? "location" : "achat";
     $("#vLocDebut").value = v ? v.locDebut || "" : ""; $("#vLocFin").value = v ? v.locFin || "" : "";
@@ -893,12 +921,18 @@ body.role-user .admin-only { display: none !important; }
     const locDebut = acquisition === "location" ? $("#vLocDebut").value : "", locFin = acquisition === "location" ? $("#vLocFin").value : "";
     if (acquisition === "location" && (!locDebut || !locFin)) { $("#vErr").textContent = "Pour un véhicule en location, les dates de début et de fin de contrat sont obligatoires."; return; }
     if (locFin && locFin < locDebut) { $("#vErr").textContent = "La fin du contrat de location doit être après le début."; return; }
-    const statut = $("#vStatut").value;
+    let statut = $("#vStatut").value, dateRestitution = $("#vRest").value;
+    const today = isoDay(new Date()), before = editId ? vehicles.find((x) => x.id === editId) : null;
+    if (statut === "restitue" && !dateRestitution) dateRestitution = today;
+    else if (statut !== "restitue" && dateRestitution && dateRestitution <= today) {
+      if (before && before.statut === "restitue") dateRestitution = ""; // remise en service : on oublie la restitution
+      else statut = "restitue";
+    }
     const km = $("#vKm").value.replace(/\D/g, "");
     const rec = { plaque, marque, modele, annee: $("#vAnnee").value.trim(), km: km ? Number(km) : "", statut,
       conducteur: statut === "sortie" ? $("#vCond").value.trim() : "", note: $("#vNote").value.trim(),
       dernierCT: $("#vDernierCT").value, prochainCT: $("#vProchainCT").value, acquisition, locDebut, locFin,
-      energie, dernierPollution: $("#vPollu").value };
+      energie, dernierPollution: $("#vPollu").value, dateRestitution };
     try {
       if (editId) {
         const old = vehicles.find((v) => v.id === editId);
@@ -1038,6 +1072,7 @@ body.role-user .admin-only { display: none !important; }
   let dossierId = null, pendingDel = null;
   function openDossier(v) {
     dossierId = v.id; pendingDel = null;
+    $("#dTypeRest").disabled = $("#dTypeRest").hidden = !isAdmin();
     $("#dType").value = "Contrôle technique"; $("#dDate").value = isoDay(new Date()); $("#dFile").value = "";
     $("#dSetCT").checked = true; $("#dNextCT").value = plusYears(isoDay(new Date()), 2); $("#dErr").textContent = "";
     $("#dUpload").hidden = !store.canUpload; $("#dReadonly").hidden = store.canUpload;
@@ -1066,8 +1101,12 @@ body.role-user .admin-only { display: none !important; }
     }).join("") : '<li class="empty-li">Aucun document pour ce véhicule.</li>';
   }
   function syncDocType() {
-    const isCT = $("#dType").value === "Contrôle technique";
+    const isCT = $("#dType").value === "Contrôle technique", isRest = $("#dType").value === "PV de restitution";
     $("#dCtOpts").hidden = !isCT;
+    $("#dRestHint").hidden = !isRest;
+    if (isRest) $("#dRestHint").textContent = $("#dDate").value
+      ? `Le véhicule passera en « Restitué » ${$("#dDate").value <= isoDay(new Date()) ? "dès l'envoi du document" : "le " + dayFmt($("#dDate").value)}.`
+      : "Indiquez la date de restitution : le véhicule passera en « Restitué » à cette date.";
     if (isCT && $("#dDate").value) $("#dNextCT").value = plusYears($("#dDate").value, 2);
   }
   $("#dType").addEventListener("change", syncDocType);
@@ -1077,6 +1116,7 @@ body.role-user .admin-only { display: none !important; }
     const v = vehicles.find((x) => x.id === dossierId); if (!v) return;
     const file = $("#dFile").files[0];
     if (!file) { $("#dErr").textContent = "Choisissez un fichier PDF ou une photo."; return; }
+    if ($("#dType").value === "PV de restitution" && !$("#dDate").value) { $("#dErr").textContent = "Indiquez la date de restitution."; return; }
     const btn = $("#dSend"); btn.disabled = true; btn.textContent = "Envoi en cours…"; $("#dErr").textContent = "";
     try {
       const up = await store.upload(file);
@@ -1085,6 +1125,7 @@ body.role-user .admin-only { display: none !important; }
       if (type === "Contrôle technique" && $("#dSetCT").checked && date) {
         await store.update(v.id, { dernierCT: date, prochainCT: $("#dNextCT").value || plusYears(date, 2) });
       }
+      if (type === "PV de restitution") { await store.update(v.id, { dateRestitution: date }); await applyRestitutions(); }
       await store.log({ date: now, action: "document", plaque: v.plaque, vehicule: v.marque + " " + v.modele, conducteur: "", note: type + (date ? " du " + dayFmt(date) : "") });
       $("#dFile").value = ""; showToast("Document ajouté");
     } catch (err) { $("#dErr").textContent = err.message || String(err); }
@@ -1169,12 +1210,12 @@ body.role-user .admin-only { display: none !important; }
         const marque = pick(r, ["marque"]), modele = pick(r, ["modele", "model"]);
         if (!plaque || known.has(plateKey(plaque))) { skipped++; continue; }
         const st = norm(pick(r, ["statut", "etat"]));
-        const statut = st.startsWith("sort") ? "sortie" : st.startsWith("maint") ? "maintenance" : "attente";
+        const statut = st.startsWith("sort") ? "sortie" : st.startsWith("maint") ? "maintenance" : st.startsWith("rest") ? "restitue" : "attente";
         const km = pick(r, ["kilometrage", "km"]).replace(/\D/g, "");
         await store.add({ plaque, marque, modele, annee: pick(r, ["annee"]), km: km ? Number(km) : "", statut,
           conducteur: statut === "sortie" ? pick(r, ["conducteur", "utilisateur", "utilisepar"]) : "", depuis: new Date().toISOString(), note: pick(r, ["note", "remarque"]), creeLe: new Date().toISOString(),
           dernierCT: pickDate(r, ["dernierct"]), prochainCT: pickDate(r, ["prochainct"]),
-          energie: energieFmt(pick(r, ["energie", "carburant"])), dernierPollution: pickDate(r, ["antipollution", "dernierantipollution", "controleantipollution"]),
+          energie: energieFmt(pick(r, ["energie", "carburant"])), dateRestitution: pickDate(r, ["restitution", "daterestitution"]), dernierPollution: pickDate(r, ["antipollution", "dernierantipollution", "controleantipollution"]),
           ...(norm(pick(r, ["acquisition", "achatlocation", "proprietelocation"])).startsWith("loc")
             ? { acquisition: "location", locDebut: pickDate(r, ["debutlocation", "debutcontrat"]), locFin: pickDate(r, ["finlocation", "fincontrat"]) }
             : { acquisition: "achat", locDebut: "", locFin: "" }) });
@@ -1194,13 +1235,13 @@ body.role-user .admin-only { display: none !important; }
       "Statut": LABEL[v.statut] || v.statut, "Utilisé par": v.statut === "sortie" ? v.conducteur || "" : "",
       "Depuis le": fmtDate(v.depuis), "Motif": v.statut !== "attente" ? v.motif || "" : "", "Dernier CT": dayFmt(v.dernierCT), "Prochain CT": dayFmt(v.prochainCT),
       "Échéance CT": v.prochainCT ? ctInfo(v.prochainCT).rel : "", "Anti-pollution": dayFmt(v.dernierPollution),
-      "Acquisition": v.acquisition === "location" ? "Location" : "Achat", "Début location": dayFmt(v.locDebut), "Fin location": dayFmt(v.locFin), "Documents": docs.filter((d) => d.vehiculeId === v.id).length, "Note": v.note || "",
+      "Acquisition": v.acquisition === "location" ? "Location" : "Achat", "Début location": dayFmt(v.locDebut), "Fin location": dayFmt(v.locFin), "Restitution": dayFmt(v.dateRestitution), "Documents": docs.filter((d) => d.vehiculeId === v.id).length, "Note": v.note || "",
     }));
     const dRows = docs.map((d) => ({ "Plaque": d.plaque, "Type": d.type, "Date du document": dayFmt(d.date), "Fichier": d.nom, "Ajouté le": fmtDate(d.ajouteLe) }));
     const hRows = history.map((h) => ({ "Date": fmtDate(h.date), "Action": ACTION[h.action] || h.action, "Plaque": h.plaque, "Véhicule": h.vehicule || "", "Conducteur": h.conducteur || "", "Compteur (km)": h.km ?? "", "Km parcourus": h.distance ?? "", "Saisi par": h.auteur || "", "Note": h.note || "" }));
     const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Énergie": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Anti-pollution": "", "Acquisition": "", "Début location": "", "Fin location": "", "Documents": "", "Note": "" }]);
-    ws1["!cols"] = [12, 14, 18, 7, 12, 12, 15, 20, 17, 24, 12, 12, 16, 13, 11, 14, 14, 11, 30].map((w) => ({ wch: w }));
+    const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Énergie": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Anti-pollution": "", "Acquisition": "", "Début location": "", "Fin location": "", "Restitution": "", "Documents": "", "Note": "" }]);
+    ws1["!cols"] = [12, 14, 18, 7, 12, 12, 15, 20, 17, 24, 12, 12, 16, 13, 11, 14, 14, 12, 11, 30].map((w) => ({ wch: w }));
     ws1["!autofilter"] = { ref: ws1["!ref"] };
     XLSX.utils.book_append_sheet(wb, ws1, "Véhicules");
     const ws2 = XLSX.utils.json_to_sheet(hRows.length ? hRows : [{ "Date": "", "Action": "", "Plaque": "", "Véhicule": "", "Conducteur": "", "Compteur (km)": "", "Km parcourus": "", "Saisi par": "", "Note": "" }]);
