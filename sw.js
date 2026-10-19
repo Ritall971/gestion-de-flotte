@@ -1,6 +1,6 @@
 // Garde l'appli disponible hors connexion : les fichiers de l'appli sont mis en cache,
 // les données (Supabase) passent toujours par le réseau.
-const CACHE = "flotte-v5";
+const CACHE = "flotte-v6";
 const SHELL = ["./", "index.html", "config.js", "manifest.webmanifest", "vendor/xlsx.full.min.js", "vendor/supabase.js",
   "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png", "icons/favicon.png"];
 

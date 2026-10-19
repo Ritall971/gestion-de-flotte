@@ -189,7 +189,7 @@ dialog form { display: grid; gap: 14px; padding: 20px; }
 /* Dossier véhicule */
 dialog.wide { width: min(620px, calc(100vw - 32px)); }
 .dossier-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.ct-box { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.ct-box { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
 .ct-box .k { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
 .ct-box .v { font-family: var(--f-display); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .doclist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; max-height: 260px; overflow-y: auto; }
@@ -349,6 +349,8 @@ body.role-user .admin-only { display: none !important; }
       <div class="field"><label for="vAnnee">Année</label><input id="vAnnee" inputmode="numeric" placeholder="2022"></div>
       <div class="field"><label for="vKm">Kilométrage</label><input id="vKm" inputmode="numeric" placeholder="45 000"></div>
     </div>
+    <div class="field"><label for="vEnergie">Énergie</label>
+      <select id="vEnergie" required><option value="">Choisir…</option><option>Essence</option><option>Diesel</option><option>Électrique</option><option>Essence/GPL</option></select></div>
     <div class="field"><label for="vAcq">Le véhicule est</label>
       <select id="vAcq"><option value="achat">Acheté</option><option value="location">En location</option></select></div>
     <div class="grid2" id="vLocFields" hidden>
@@ -359,6 +361,7 @@ body.role-user .admin-only { display: none !important; }
       <div class="field"><label for="vDernierCT">Dernier contrôle technique</label><input id="vDernierCT" type="date"></div>
       <div class="field"><label for="vProchainCT">Prochain contrôle technique</label><input id="vProchainCT" type="date"></div>
     </div>
+    <div class="field"><label for="vPollu">Dernier contrôle anti-pollution (facultatif)</label><input id="vPollu" type="date"></div>
     <div class="field"><label for="vStatut">Statut</label>
       <select id="vStatut"><option value="attente">En attente</option><option value="sortie">Sorti</option><option value="maintenance">En maintenance</option></select></div>
     <div class="field" id="vCondField"><label for="vCond">Conducteur</label><input id="vCond" placeholder="Nom de la personne" list="conducteurs"></div>
@@ -401,13 +404,14 @@ body.role-user .admin-only { display: none !important; }
     <div class="ct-box">
       <div><div class="k">Dernier CT</div><div class="v" id="dLast">—</div></div>
       <div><div class="k">Prochain CT</div><div class="v" id="dNext">—</div><div id="dNextRel"></div></div>
+      <div><div class="k">Anti-pollution</div><div class="v" id="dPollu">—</div></div>
     </div>
     <ul class="doclist" id="dList"></ul>
     <div class="upload" id="dUpload">
       <h3>Ajouter un document</h3>
       <div class="grid2">
         <div class="field"><label for="dType">Type</label>
-          <select id="dType"><option>Contrôle technique</option><option>Contre-visite</option><option>Carte grise</option><option>Assurance</option><option>Facture d'entretien</option><option>Autre</option></select></div>
+          <select id="dType"><option>Contrôle technique</option><option>Contre-visite</option><option>Carte grise</option><option>Assurance</option><option>Facture d'entretien</option><option>Devis</option><option>Autre</option></select></div>
         <div class="field"><label for="dDate">Date du document</label><input id="dDate" type="date"></div>
       </div>
       <div class="field"><label for="dFile">Fichier (PDF ou photo, 20 Mo maximum)</label><input id="dFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp"></div>
@@ -638,6 +642,15 @@ body.role-user .admin-only { display: none !important; }
   const isoDay = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   const plusYears = (ymd, n) => { if (!ymd) return ""; const d = new Date(ymd + "T00:00:00"); d.setFullYear(d.getFullYear() + n); return isoDay(d); };
   const CT_SOON = 30; // jours avant échéance pour l'alerte
+  function energieFmt(x) {
+    const n = norm(x).replace(/[^a-z]/g, "");
+    if (!n) return "";
+    if (n.includes("gpl")) return "Essence/GPL";
+    if (n.startsWith("dies") || n === "gazole" || n === "gasoil") return "Diesel";
+    if (n.startsWith("elec")) return "Électrique";
+    if (n.startsWith("ess")) return "Essence";
+    return x.trim();
+  }
   function locLabel(v) {
     if (v.acquisition !== "location") return "";
     if (!v.locFin) return "Location";
@@ -704,7 +717,7 @@ body.role-user .admin-only { display: none !important; }
       btns += `<button class="btn sm" data-act="docs" data-id="${v.id}" type="button">Documents${nd ? ` (${nd})` : ""}</button>`;
       btns += `<button class="btn sm admin-only" data-act="hist" data-id="${v.id}" type="button">Historique</button>`;
       btns += `<button class="btn sm admin-only" data-act="edit" data-id="${v.id}" type="button" aria-label="Modifier ${esc(v.plaque)}">Modifier</button>`;
-      const details = [v.annee, kmFmt(v.km), locLabel(v)].filter(Boolean).join(" · ");
+      const details = [v.annee, kmFmt(v.km), v.energie, locLabel(v)].filter(Boolean).join(" · ");
       let who = '<span class="muted">—</span>';
       if (v.statut === "sortie") who = `<strong>${esc(v.conducteur || "Non renseigné")}</strong><span class="since" title="${esc(fmtDate(v.depuis))}">${since(v.depuis)}${v.motif ? " · " + esc(v.motif) : ""}</span>`;
       else if (v.statut === "maintenance") who = `<span class="since" title="${esc(fmtDate(v.depuis))}">${v.motif ? esc(v.motif) + " · " : ""}${since(v.depuis)}</span>`;
@@ -760,6 +773,7 @@ body.role-user .admin-only { display: none !important; }
     $("#vAnnee").value = v ? v.annee || "" : ""; $("#vKm").value = v ? v.km || "" : "";
     $("#vDernierCT").value = v ? v.dernierCT || "" : ""; $("#vProchainCT").value = v ? v.prochainCT || "" : "";
     $("#vStatut").value = v ? v.statut : "attente"; $("#vCond").value = v ? v.conducteur || "" : ""; $("#vNote").value = v ? v.note || "" : "";
+    $("#vEnergie").value = v ? v.energie || "" : ""; $("#vPollu").value = v ? v.dernierPollution || "" : "";
     $("#vAcq").value = v && v.acquisition === "location" ? "location" : "achat";
     $("#vLocDebut").value = v ? v.locDebut || "" : ""; $("#vLocFin").value = v ? v.locFin || "" : "";
     $("#vErr").textContent = ""; syncCond(); syncAcq();
@@ -782,6 +796,8 @@ body.role-user .admin-only { display: none !important; }
     if (!plaque || !marque || !modele) { $("#vErr").textContent = "La plaque, la marque et le modèle sont obligatoires."; return; }
     const dup = vehicles.find((v) => plateKey(v.plaque) === plateKey(plaque) && v.id !== editId);
     if (dup) { $("#vErr").textContent = `La plaque ${plaque} est déjà enregistrée (${dup.marque} ${dup.modele}).`; return; }
+    const energie = $("#vEnergie").value;
+    if (!energie) { $("#vErr").textContent = "Indiquez l'énergie du véhicule."; return; }
     const acquisition = $("#vAcq").value;
     const locDebut = acquisition === "location" ? $("#vLocDebut").value : "", locFin = acquisition === "location" ? $("#vLocFin").value : "";
     if (acquisition === "location" && (!locDebut || !locFin)) { $("#vErr").textContent = "Pour un véhicule en location, les dates de début et de fin de contrat sont obligatoires."; return; }
@@ -790,7 +806,8 @@ body.role-user .admin-only { display: none !important; }
     const km = $("#vKm").value.replace(/\D/g, "");
     const rec = { plaque, marque, modele, annee: $("#vAnnee").value.trim(), km: km ? Number(km) : "", statut,
       conducteur: statut === "sortie" ? $("#vCond").value.trim() : "", note: $("#vNote").value.trim(),
-      dernierCT: $("#vDernierCT").value, prochainCT: $("#vProchainCT").value, acquisition, locDebut, locFin };
+      dernierCT: $("#vDernierCT").value, prochainCT: $("#vProchainCT").value, acquisition, locDebut, locFin,
+      energie, dernierPollution: $("#vPollu").value };
     try {
       if (editId) {
         const old = vehicles.find((v) => v.id === editId);
@@ -942,6 +959,7 @@ body.role-user .admin-only { display: none !important; }
     $("#dTitle").textContent = `${v.marque} ${v.modele}`;
     $("#dLast").textContent = v.dernierCT ? dayFmt(v.dernierCT) : "—";
     $("#dNext").textContent = v.prochainCT ? dayFmt(v.prochainCT) : "—";
+    $("#dPollu").textContent = v.dernierPollution ? dayFmt(v.dernierPollution) : "—";
     const c = ctInfo(v.prochainCT);
     $("#dNextRel").innerHTML = v.prochainCT ? `<span class="ct ${c.cls}"><span class="r">${c.rel}</span></span>` : '<span class="muted">À renseigner</span>';
     const list = docs.filter((d) => d.vehiculeId === v.id);
@@ -1023,9 +1041,9 @@ body.role-user .admin-only { display: none !important; }
   async function loadDemo() {
     const now = new Date(), ago = (h) => new Date(now - h * 3600e3).toISOString();
     const demo = [
-      { plaque: "FG-482-KT", marque: "Renault", modele: "Kangoo Van", annee: "2021", km: 68420, statut: "sortie", conducteur: "Exemple : Julien M.", depuis: ago(3), motif: "Intervention client", dernierCT: plusYears(isoDay(new Date(now - 20 * 86400e3)), -2), prochainCT: isoDay(new Date(+now + 20 * 86400e3)) },
-      { plaque: "GH-105-RD", marque: "Peugeot", modele: "Partner", annee: "2022", km: 41200, statut: "attente", conducteur: "", depuis: ago(20), note: "", dernierCT: "2025-03-14", prochainCT: "2027-03-14" },
-      { plaque: "EZ-731-LB", marque: "Citroën", modele: "Berlingo", annee: "2019", km: 112800, statut: "maintenance", conducteur: "", depuis: ago(50), motif: "Vidange et plaquettes", dernierCT: plusYears(isoDay(new Date(now - 6 * 86400e3)), -2), prochainCT: isoDay(new Date(now - 6 * 86400e3)) },
+      { plaque: "FG-482-KT", marque: "Renault", modele: "Kangoo Van", annee: "2021", energie: "Diesel", km: 68420, statut: "sortie", conducteur: "Exemple : Julien M.", depuis: ago(3), motif: "Intervention client", dernierCT: plusYears(isoDay(new Date(now - 20 * 86400e3)), -2), prochainCT: isoDay(new Date(+now + 20 * 86400e3)) },
+      { plaque: "GH-105-RD", marque: "Peugeot", modele: "Partner", annee: "2022", energie: "Diesel", km: 41200, statut: "attente", conducteur: "", depuis: ago(20), note: "", dernierCT: "2025-03-14", prochainCT: "2027-03-14" },
+      { plaque: "EZ-731-LB", marque: "Citroën", modele: "Berlingo", annee: "2019", energie: "Essence", km: 112800, statut: "maintenance", conducteur: "", depuis: ago(50), motif: "Vidange et plaquettes", dernierCT: plusYears(isoDay(new Date(now - 6 * 86400e3)), -2), prochainCT: isoDay(new Date(now - 6 * 86400e3)) },
       { plaque: "HB-260-NC", marque: "Dacia", modele: "Sandero", annee: "2023", km: 18950, statut: "attente", conducteur: "", depuis: ago(6), note: "" },
       { plaque: "GK-918-PS", marque: "Toyota", modele: "Yaris Hybride", annee: "2022", km: 37600, statut: "sortie", conducteur: "Exemple : Sarah L.", depuis: ago(27), motif: "Déplacement site Nord" },
     ];
@@ -1065,6 +1083,7 @@ body.role-user .admin-only { display: none !important; }
         await store.add({ plaque, marque, modele, annee: pick(r, ["annee"]), km: km ? Number(km) : "", statut,
           conducteur: statut === "sortie" ? pick(r, ["conducteur", "utilisateur", "utilisepar"]) : "", depuis: new Date().toISOString(), note: pick(r, ["note", "remarque"]), creeLe: new Date().toISOString(),
           dernierCT: pickDate(r, ["dernierct"]), prochainCT: pickDate(r, ["prochainct"]),
+          energie: energieFmt(pick(r, ["energie", "carburant"])), dernierPollution: pickDate(r, ["antipollution", "dernierantipollution", "controleantipollution"]),
           ...(norm(pick(r, ["acquisition", "achatlocation", "proprietelocation"])).startsWith("loc")
             ? { acquisition: "location", locDebut: pickDate(r, ["debutlocation", "debutcontrat"]), locFin: pickDate(r, ["finlocation", "fincontrat"]) }
             : { acquisition: "achat", locDebut: "", locFin: "" }) });
@@ -1080,17 +1099,17 @@ body.role-user .admin-only { display: none !important; }
     if (!window.XLSX) { showToast("Le module Excel n'a pas pu se charger."); return; }
     const sorted = vehicles.slice().sort((a, b) => plateKey(a.plaque).localeCompare(plateKey(b.plaque)));
     const vRows = sorted.map((v) => ({
-      "Plaque": v.plaque, "Marque": v.marque, "Modèle": v.modele, "Année": v.annee || "", "Kilométrage": v.km === "" ? "" : v.km,
+      "Plaque": v.plaque, "Marque": v.marque, "Modèle": v.modele, "Année": v.annee || "", "Énergie": v.energie || "", "Kilométrage": v.km === "" ? "" : v.km,
       "Statut": LABEL[v.statut] || v.statut, "Utilisé par": v.statut === "sortie" ? v.conducteur || "" : "",
       "Depuis le": fmtDate(v.depuis), "Motif": v.statut !== "attente" ? v.motif || "" : "", "Dernier CT": dayFmt(v.dernierCT), "Prochain CT": dayFmt(v.prochainCT),
-      "Échéance CT": v.prochainCT ? ctInfo(v.prochainCT).rel : "",
+      "Échéance CT": v.prochainCT ? ctInfo(v.prochainCT).rel : "", "Anti-pollution": dayFmt(v.dernierPollution),
       "Acquisition": v.acquisition === "location" ? "Location" : "Achat", "Début location": dayFmt(v.locDebut), "Fin location": dayFmt(v.locFin), "Documents": docs.filter((d) => d.vehiculeId === v.id).length, "Note": v.note || "",
     }));
     const dRows = docs.map((d) => ({ "Plaque": d.plaque, "Type": d.type, "Date du document": dayFmt(d.date), "Fichier": d.nom, "Ajouté le": fmtDate(d.ajouteLe) }));
     const hRows = history.map((h) => ({ "Date": fmtDate(h.date), "Action": ACTION[h.action] || h.action, "Plaque": h.plaque, "Véhicule": h.vehicule || "", "Conducteur": h.conducteur || "", "Compteur (km)": h.km ?? "", "Km parcourus": h.distance ?? "", "Saisi par": h.auteur || "", "Note": h.note || "" }));
     const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Acquisition": "", "Début location": "", "Fin location": "", "Documents": "", "Note": "" }]);
-    ws1["!cols"] = [12, 14, 18, 7, 12, 15, 20, 17, 24, 12, 12, 16, 11, 14, 14, 11, 30].map((w) => ({ wch: w }));
+    const ws1 = XLSX.utils.json_to_sheet(vRows.length ? vRows : [{ "Plaque": "", "Marque": "", "Modèle": "", "Année": "", "Énergie": "", "Kilométrage": "", "Statut": "", "Utilisé par": "", "Depuis le": "", "Motif": "", "Dernier CT": "", "Prochain CT": "", "Échéance CT": "", "Anti-pollution": "", "Acquisition": "", "Début location": "", "Fin location": "", "Documents": "", "Note": "" }]);
+    ws1["!cols"] = [12, 14, 18, 7, 12, 12, 15, 20, 17, 24, 12, 12, 16, 13, 11, 14, 14, 11, 30].map((w) => ({ wch: w }));
     ws1["!autofilter"] = { ref: ws1["!ref"] };
     XLSX.utils.book_append_sheet(wb, ws1, "Véhicules");
     const ws2 = XLSX.utils.json_to_sheet(hRows.length ? hRows : [{ "Date": "", "Action": "", "Plaque": "", "Véhicule": "", "Conducteur": "", "Compteur (km)": "", "Km parcourus": "", "Saisi par": "", "Note": "" }]);
